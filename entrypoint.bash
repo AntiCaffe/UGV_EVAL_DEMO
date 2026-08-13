@@ -3,7 +3,7 @@
 set -euo pipefail
 
 #이미지 이름
-IMAGE="anticaffe/ugv_tracker:1.0.0"
+IMAGE="anticaffe/ugv_project:1.0.0"
 
 #프로젝트 폴더 경로
 PROJECT_DIR="/home/ivl/UGV_EVAL_DEMO" 
