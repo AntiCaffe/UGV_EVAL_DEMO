@@ -1,0 +1,29 @@
+pcdet:
+  ros__parameters:
+
+    # custom 1
+    # config_file: "cfgs/kitti_models/second_custom.yaml"
+    # model_file: "checkpoints/second_custom.pth"
+
+    # # custom 09/23
+    # config_file: "cfgs/kitti_models/second_custom_250.yaml"
+    # model_file: "checkpoints/second_custom_250.pth"
+
+    # custom 09/30
+    # config_file: "cfgs/kitti_models/second_custom_300.yaml"
+    # model_file: "checkpoints/second_custom_300.pth"
+
+    # custom 10/04
+    # config_file: "cfgs/kitti_models/second_custom_1004.yaml"
+    # model_file: "checkpoints/second_custom_1004.pth"
+
+    # custom 10/04
+    config_file: "cfgs/kitti_models/second_KN.yaml"
+    model_file: "checkpoints/second_KN.pth"
+
+    allow_memory_fractioning: False
+    allow_score_thresholding: True
+    num_features: 4
+    device_id: 0
+    device_memory_fraction: 6.0
+    threshold_array: [1.0, 0.3, 1.0] # [Car, Pedestrian, Bicycle]

@@ -1,0 +1,36 @@
+/bags
+/calibration
+/kitti_samples
+
+# ROS 2 / colcon build outputs (matches at every directory level)
+build/
+install/
+log/
+
+# Python bytecode and interpreter caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Python tool and test caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# Packaging and notebook caches
+*.egg-info/
+.eggs/
+.ipynb_checkpoints/
+
+# Generic and CMake caches
+.cache/
+CMakeCache.txt
+CMakeFiles/
+
+# model checkpoints
+*.pth

@@ -1,0 +1,28 @@
+pcdet:
+  ros__parameters:
+    config_file: "cfgs/nuscenes_models/cbgs_pillar0075_res2d_centerpoint.yaml"
+    model_file:  "checkpoints/cbgs_pp_centerpoint_nds6070.pth"
+
+    # 디바이스/메모리
+    device_id: 0
+    allow_memory_fractioning: false
+    device_memory_fraction: 6.0
+
+    # nuScenes는 5채널
+    num_features: 5
+    # (쓰는 중이면) nsweeps도 모델 설정에 맞춰 10~20 등 유지
+    nsweeps: 10
+
+    # 클래스별 임계치 (길이 10개 필수)
+    allow_score_thresholding: true
+    # car, truck, construction_vehicle, bus, trailer, barrier, motorcycle, bicycle, pedestrian, traffic_cone
+    # → 3종만 쓰고 싶은 경우: 원하는 3종은 적당히(예: 0.35~0.7),
+    #   나머지 7종은 0.99로 사실상 막기
+    threshold_array: [0.70, 0.99, 0.99, 0.99, 0.99, 0.99, 0.99, 0.50, 0.35, 0.99]
+    # ↑ car=0.70, bicycle=0.50, pedestrian=0.35만 통과, 나머지는 0.99로 차단
+
+    # time 채널 처리(센서에 time 필드가 없으면 프레임/스윕 기반으로 내부 생성)
+    time_source: "auto"
+    time_field: "time"
+    time_field_relative: true
+    time_scale: 1.0

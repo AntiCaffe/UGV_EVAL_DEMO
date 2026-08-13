@@ -1,0 +1,33 @@
+pcdet:
+  ros__parameters:
+
+    # custom 1
+    # config_file: "cfgs/kitti_models/pv_rcnn.yaml"
+    # model_file: "checkpoints/pv_rcnn_8369.pth"
+
+    # # custom 09/23
+    # config_file: "cfgs/kitti_models/second_custom_250.yaml"
+    # model_file: "checkpoints/second_custom_250.pth"
+
+    # custom 09/30
+    # config_file: "cfgs/kitti_models/second_custom_300.yaml"
+    # model_file: "checkpoints/second_custom_300.pth"
+
+    # custom 10/04
+    # config_file: "cfgs/kitti_models/second_custom_1004.yaml"
+    # model_file: "checkpoints/second_custom_1004.pth"
+
+    # custom 10/04
+    # config_file: "cfgs/kitti_models/pv_rcnn.yaml"
+    # model_file: "checkpoints/pv_rcnn_8369.pth"
+    
+    # SECOND 모델로 복구 (원래 안정적인 모델)
+    config_file: "cfgs/kitti_models/centerpoint_base.yaml"
+    model_file: "checkpoints/checkpoint_epoch_100.pth"
+
+    allow_memory_fractioning: False
+    allow_score_thresholding: True
+    num_features: 4
+    device_id: 0
+    device_memory_fraction: 6.0
+    threshold_array: [1.0, 0.3, 1.0] # [Car, Pedestrian, Bicycle] - 모든 클래스 검출

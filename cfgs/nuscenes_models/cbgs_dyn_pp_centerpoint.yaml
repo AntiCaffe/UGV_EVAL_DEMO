@@ -1,0 +1,60 @@
+# ========================= DATA CONFIG =========================
+DATA_CONFIG:
+  _BASE_CONFIG_: cfgs/dataset_configs/nuscenes_dataset.yaml
+
+  POINT_CLOUD_RANGE: [-54.0, -54.0, -5.0, 54.0, 54.0, 3.0]
+
+  DATA_AUGMENTOR:
+    DISABLE_AUG_LIST: ['placeholder']
+    AUG_CONFIG_LIST:
+      - NAME: gt_sampling
+        USE_ROAD_PLANE: False
+      - NAME: random_world_flip
+        ALONG_AXIS_LIST: ['x', 'y']
+      - NAME: random_world_rotation
+        WORLD_ROT_ANGLE: [-0.78539816, 0.78539816]
+      - NAME: random_world_scaling
+        WORLD_SCALE_RANGE: [0.95, 1.05]
+
+# ========================= MODEL =========================
+MODEL:
+  NAME: CenterPoint
+  VFE:
+    NAME: DynamicMeanVFE
+    with_distance: False
+  BACKBONE_3D:
+    NAME: VoxelResBackBone8x
+  DENSE_HEAD:
+    NAME: CenterHead
+    CLASS_AGNOSTIC: False
+    INPUT_CHANNELS: 256
+    NUM_CLASSES: 10
+    USE_DIRECTION_CLASSIFIER: True
+
+    TARGET_ASSIGNER_CONFIG:
+      NAME: AxisAlignedTargetAssigner
+      FEATURE_MAP_STRIDE: 1
+      GRID_SIZE: [432, 432, 1]
+      NUM_DIR_BINS: 2
+      CODE_SIZE: 10
+
+# ========================= LOSS & TRAIN =========================
+OPTIMIZATION:
+  BATCH_SIZE_PER_GPU: 4
+  NUM_EPOCHS: 20
+
+# ========================= POST PROCESSING =========================
+POST_PROCESSING:
+  SCORE_THRESH: 0.10
+  OUTPUT_RAW_SCORE: False
+  EVAL_METRIC: nuscenes
+  NMS_CONFIG:
+    NMS_TYPE: nms_gpu
+    NMS_THRESH: 0.20
+    NMS_PRE_MAXSIZE: 4096
+    NMS_POST_MAXSIZE: 500
+
+# ========================= CLASS NAMES =========================
+CLASS_NAMES: ['car', 'truck', 'construction_vehicle', 'bus',
+              'trailer', 'barrier', 'motorcycle', 'bicycle',
+              'pedestrian', 'traffic_cone']

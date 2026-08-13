@@ -1,0 +1,22 @@
+topics:
+  navpvt: /ublox_gps_node/navpvt
+  fix: /ublox_gps_node/fix
+  fix_velocity: /ublox_gps_node/fix_velocity
+  rtcm: /rtcm
+
+rtk_quality:
+  high:
+    fix_type: 3
+    flags: 131
+    h_acc_mm_lt: 30
+    v_acc_mm_lt: 50
+    s_acc_mm_s_lt: 100
+  medium:
+    fix_type: 3
+    flags: 67
+    h_acc_mm_lt: 200
+    s_acc_mm_s_lt: 200
+
+calibration:
+  stationary_duration_sec: 10.0
+  motion_direction: forward

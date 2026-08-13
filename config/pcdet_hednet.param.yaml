@@ -1,0 +1,12 @@
+pcdet:
+  ros__parameters:
+
+    config_file: "cfgs/kitti_models/hednet_20e_nusences.yaml"
+    model_file: "checkpoints/hednet2d_nuscenes.pth"
+
+    allow_memory_fractioning: False
+    allow_score_thresholding: True
+    num_features: 4
+    device_id: 0
+    device_memory_fraction: 6.0
+    threshold_array: [0.4, 0.25, 0.4] # [Car, Pedestrian, Bicycle]

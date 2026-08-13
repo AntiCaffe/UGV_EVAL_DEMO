@@ -1,0 +1,18 @@
+pcdet:
+  ros__parameters:
+
+    # custom dong
+    # config_file: "cfgs/kitti_models/GLENet_VR_dong.yaml"
+    # model_file: "checkpoints/GLENet_VR_dong.pth"
+
+    # custom yong
+    config_file: "cfgs/kitti_models/GLENet_VR_custom.yaml"
+    model_file: "checkpoints/GLENet_VR_custom.pth"
+
+
+    allow_memory_fractioning: False
+    allow_score_thresholding: True
+    num_features: 4
+    device_id: 0
+    device_memory_fraction: 6.0
+    threshold_array: [0.2, 0.1, 0.3] # [Car, Pedestrian, Bicycle]
