@@ -32,5 +32,3 @@ htmlcov/
 CMakeCache.txt
 CMakeFiles/
 
-# model checkpoints
-*.pth
