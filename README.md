@@ -273,6 +273,76 @@ SECOND:
 python demo.py --cfg_file cfgs/kitti_models/second_KN.yaml --ckpt checkpoints/second_KN.pth --data_path ../../kitti_samples/velodyne/000000.bin
 ```
 
+### `tracking_demo.py` 검출·추적
+
+`tracking_demo.py`는 파일명 순서대로 point cloud를 검출하고, `pcdet_ros2`의 3D ByteTracker로 추적합니다. 실행 모드에 따라 Open3D 시각화, 프레임별 TXT 저장 또는 두 기능을 함께 사용할 수 있습니다.
+
+#### 옵션과 alias
+
+| 짧은 alias | 긴 옵션 | 기본값 | 설명 |
+| --- | --- | --- | --- |
+| `-h` | `--help` | - | 도움말 출력 |
+| - | `--cfg_file` | `cfgs/kitti_models/second.yaml` | OpenPCDet 모델 설정 YAML |
+| - | `--data_path` | 필수 | 단일 `.bin`/`.npy` 또는 연속 프레임 디렉터리 |
+| - | `--ckpt` | 필수 | 모델 checkpoint |
+| `-m` | `--mode` | `demo` | `demo`, `infer`, `both` 중 실행 모드 선택 |
+| `-o` | `--output_dir` | `tracking_results` | `infer`/`both` 모드의 프레임별 TXT 출력 폴더 |
+| - | `--output_path` | `tracking_results` | `--output_dir`과 동일한 호환 alias이며 파일이 아닌 폴더를 지정 |
+| - | `--ext` | `.bin` | 입력 확장자: `.bin` 또는 `.npy` |
+| - | `--track_classes` | `2` | 추적할 1-based class ID 목록. KITTI는 `1=Car`, `2=Pedestrian`, `3=Cyclist` |
+| - | `--frame_rate` | `30` | ByteTracker에 전달할 입력 frame rate |
+| - | `--velocity_scale` | `1.0` | Open3D 속도 화살표 길이에 적용하는 시간 배율 |
+| - | `--no_visualization` | 비활성 | `demo`/`both` 모드에서도 Open3D 창을 열지 않음 |
+
+`--data_path`에 디렉터리를 지정하면 파일명을 정렬한 순서로 처리합니다. 시간축 추적을 확인하려면 단일 파일이 아닌 연속 point cloud 디렉터리를 사용해야 합니다.
+
+#### 시각화 모드
+
+박스는 track ID별 고정 색상으로 표시되며, 박스 위 라벨에는 ID, 위치, 속도 벡터와 속력이 표시됩니다. 속도가 계산된 트랙에는 이동 방향 화살표도 표시됩니다. 시각화 창을 닫으면 다음 프레임으로 넘어갑니다.
+
+```bash
+python tracking_demo.py \
+  --cfg_file cfgs/kitti_models/centerpoint_aug.yaml \
+  --ckpt checkpoints/checkpoint_epoch_80.pth \
+  --data_path ../../kitti_samples/velodyne \
+  --track_classes 2 \
+  --velocity_scale 2.0 \
+  -m demo
+```
+
+#### 프레임별 TXT 저장 모드
+
+입력 파일마다 `<POINT_CLOUD_STEM>.txt`가 지정한 폴더에 생성됩니다. 예를 들어 `000000.bin`과 `000001.bin`은 각각 `000000.txt`와 `000001.txt`로 저장됩니다.
+
+```bash
+python tracking_demo.py \
+  --cfg_file cfgs/kitti_models/second_KN.yaml \
+  --ckpt checkpoints/second_KN.pth \
+  --data_path ../../kitti_samples/velodyne \
+  --track_classes 1 2 3 \
+  -m infer \
+  -o ../../tracking_results
+```
+
+TXT의 각 track 행은 탭으로 구분되며 다음 열을 가집니다.
+
+```text
+frame frame_file track_id class_id class_name score
+x1 y1 z1 x2 y2 z2 yaw vx vy vz speed detection_index
+```
+
+#### 시각화와 TXT 저장 동시 실행
+
+```bash
+python tracking_demo.py \
+  --cfg_file cfgs/kitti_models/second_KN.yaml \
+  --ckpt checkpoints/second_KN.pth \
+  --data_path ../../kitti_samples/velodyne \
+  --track_classes 1 2 3 \
+  -m both \
+  -o ../../tracking_results
+```
+
 ## 테스트
 
 ```bash
