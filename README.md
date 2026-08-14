@@ -55,7 +55,27 @@ ros2 pkg executables pcdet_ros2
 ros2 pkg executables rtk_livox_dataset_tools
 ```
 
-## 1. PCDet 3D 검출·추적
+## ROS 2 실행
+
+### Launch 파일 목록
+
+| 패키지 | Launch | 기능 |
+| --- | --- | --- |
+| `pcdet_ros2` | `pcdet.launch.py` | PCDet 검출·추적 노드 실행 |
+| `rtk_livox_dataset_tools` | `livox_collection.launch.py` | 지정된 기존 토픽을 rosbag으로 기록 |
+| `rtk_livox_dataset_tools` | `rtk_collection.launch.py` | GNSS/NTRIP 실행, RTK 상태 확인 및 rosbag 기록 |
+| `rtk_livox_dataset_tools` | `rtk_status_monitor.launch.py` | RTK 품질 및 RTCM 수신 상태 CSV 기록 |
+| `rtk_livox_dataset_tools` | `rviz_gt_check.launch.py` | RTK 위치·속도를 LiDAR 좌표계 marker로 변환하고 RViz 실행 |
+| `rtk_livox_dataset_tools` | `realsense_collection.launch.py` | RealSense 실행 및 point cloud 기록 |
+| `rtk_livox_dataset_tools` | `realsense_sync_check.launch.py` | 두 RealSense point cloud를 나란히 재발행하고 RViz 실행 |
+
+각 launch의 인자는 다음 명령으로 확인할 수 있습니다.
+
+```bash
+ros2 launch <PACKAGE> <LAUNCH_FILE> --show-args
+```
+
+### PCDet ROS 2 검출·추적
 
 기본 launch는 `/livox/lidar`의 `sensor_msgs/PointCloud2`를 받아 CenterPoint 설정과 `checkpoint_epoch_100.pth`를 사용합니다. 결과는 기본적으로 `/lr_detections`에 `visualization_msgs/MarkerArray` 형식으로 발행합니다.
 
@@ -82,7 +102,7 @@ ros2 launch pcdet_ros2 pcdet.launch.py \
 
 모델과 가중치 조합은 `config/*.param.yaml`에서 선택합니다. 경로는 설치된 `pcdet_ros2` 패키지 디렉터리를 기준으로 해석됩니다.
 
-## 2. `rtk_livox_dataset_tools`
+### `rtk_livox_dataset_tools`
 
 이 패키지는 Livox 드라이버, PCDet 또는 추적 노드를 구현하거나 실행하지 않습니다. 외부 노드가 발행하는 센서 토픽을 기록하고, RTK 데이터를 LiDAR 좌표계로 변환·검수하는 도구입니다.
 
@@ -96,7 +116,7 @@ u-blox/C099 + NTRIP ── RTK 토픽 ── rtk_collection.launch.py ── RTK
 Livox/RTK bag + calibration YAML ── 후처리·시각화 도구
 ```
 
-### Livox PointCloud2 기록
+#### Livox PointCloud2 기록
 
 `livox_collection.launch.py`는 지정한 토픽으로 `ros2 bag record`를 실행하는 기록용 wrapper입니다. Livox driver는 별도로 먼저 실행되어 `/livox/lidar`를 발행하고 있어야 합니다.
 
@@ -114,7 +134,7 @@ ros2 bag record -o bags/run_01_livox /livox/lidar
 
 `record_topics`에 다른 토픽을 지정하면 함께 기록할 수 있지만, 이 launch가 해당 토픽의 생산 노드를 실행해 주지는 않습니다.
 
-### Launch 파일별 역할
+#### Launch 입출력 상세
 
 | Launch | 읽는 입력 | 실행/처리 | 결과 |
 | --- | --- | --- | --- |
@@ -136,7 +156,7 @@ ros2 bag record -o bags/run_01_livox /livox/lidar
 
 C099 UDP bridge를 사용할 경우 `start_ublox:=false`, `start_c099_udp:=true`로 설정해야 동일한 RTK 토픽을 두 노드가 동시에 발행하는 것을 피할 수 있습니다.
 
-### 후처리 실행 도구
+#### 후처리 실행 도구
 
 다음 도구는 launch에 자동으로 포함되지 않으며 필요할 때 `ros2 run`으로 직접 실행합니다.
 
@@ -150,7 +170,7 @@ C099 UDP bridge를 사용할 경우 `start_ublox:=false`, `start_c099_udp:=true`
 
 `config/dataset_collection.yaml`은 설치 대상에는 포함되지만 현재 어떤 launch나 Python 노드에서도 읽지 않습니다. 해당 파일의 토픽, RTK 품질 임계값과 캘리브레이션 항목은 현재 실행 동작에 영향을 주지 않습니다.
 
-## TEST
+#### RTK–Livox GT 시각 검수
 
 ```bash
 ros2 launch rtk_livox_dataset_tools rviz_gt_check.launch.py \
@@ -164,7 +184,7 @@ ros2 launch rtk_livox_dataset_tools rviz_gt_check.launch.py \
 ros2 bag play bags/run_01_livox_rtk --loop
 ```
 
-## 3. RealSense 2대 동기화 리허설
+#### RealSense 2대 동기화 리허설
 
 각 컴퓨터에서 서로 다른 namespace로 point cloud를 기록합니다.
 
@@ -201,26 +221,6 @@ ros2 run rtk_livox_dataset_tools realsense_sync_play \
   --time-offset-bag1-minus-bag2-sec 0.0
 ```
 
-## 전체 실행 가능 항목
-
-### ROS 2 launch 파일
-
-| 패키지 | launch | 기능 |
-| --- | --- | --- |
-| `pcdet_ros2` | `pcdet.launch.py` | PCDet 검출·추적 노드 실행 |
-| `rtk_livox_dataset_tools` | `livox_collection.launch.py` | 지정된 기존 토픽을 rosbag으로 기록 |
-| `rtk_livox_dataset_tools` | `rtk_collection.launch.py` | GNSS/NTRIP 실행, RTK 상태 확인 및 rosbag 기록 |
-| `rtk_livox_dataset_tools` | `rtk_status_monitor.launch.py` | RTK 품질 및 RTCM 수신 상태 CSV 기록 |
-| `rtk_livox_dataset_tools` | `rviz_gt_check.launch.py` | RTK 위치·속도를 LiDAR 좌표계 marker로 변환하고 RViz 실행 |
-| `rtk_livox_dataset_tools` | `realsense_collection.launch.py` | RealSense 실행 및 point cloud 기록 |
-| `rtk_livox_dataset_tools` | `realsense_sync_check.launch.py` | 두 RealSense point cloud를 나란히 재발행하고 RViz 실행 |
-
-launch 인자는 다음 명령으로 확인할 수 있습니다.
-
-```bash
-ros2 launch <PACKAGE> <LAUNCH_FILE> --show-args
-```
-
 ### 직접 실행 가능한 ROS 2 노드/도구
 
 | 실행 파일 | 기능 |
@@ -243,7 +243,7 @@ ros2 launch <PACKAGE> <LAUNCH_FILE> --show-args
 ros2 run rtk_livox_dataset_tools realsense_sync_play --help
 ```
 
-### OpenPCDet 원본 도구
+## OpenPCDet 원본 도구
 
 ROS 2를 거치지 않고 OpenPCDet의 원본 학습·평가·데모도 실행할 수 있습니다. 구체적인 모델 인자는 `OpenPCDet/README.md`를 참고하십시오.
 
