@@ -27,7 +27,7 @@ Livox LiDAR 기반 3D 객체 검출·추적과 RTK GNSS ground truth 검수를 �
 
 `entrypoint.bash`는 GPU, host network와 X11을 연결하여 Docker 이미지 `anticaffe/ugv_project:1.0.0`을 실행합니다. 다음 순서로 환경을 구성합니다.
 
-1. Docker 이미지를 다운로드합니다. 호스트 CUDA 환경은 CUDA 11.8 Toolkit 사용을 권장합니다.
+1. Docker 이미지를 다운로드합니다. **호스트 CUDA 환경은 CUDA 11.8 Toolkit 사용을 권장합니다.**
 
    ```bash
    docker pull anticaffe/ugv_project:1.0.0
