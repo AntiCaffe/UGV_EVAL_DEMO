@@ -1,11 +1,13 @@
 # UGV_EVAL_DEMO
 
-Livox LiDAR 기반 3D 객체 검출·추적과 결과 검수를 위한 ROS 2 워크스페이스입니다.
+Livox LiDAR 기반 3D 객체 검출·추적과 RTK GNSS ground truth 검수를 위한 ROS 2 워크스페이스입니다.
 
 이 저장소에서 실행할 수 있는 주요 기능은 다음과 같습니다.
 
 - OpenPCDet 기반 3D 객체 검출 및 ByteTrack 추적
-- Livox 및 RealSense 데이터 수집
+- Livox PointCloud2와 RTK GNSS 토픽의 개별 rosbag 기록
+- RTK–LiDAR 좌표계 캘리브레이션 및 GT 시각 검수
+- RealSense 2대의 수집·재생 시각 동기화 리허설
 - OpenPCDet 학습, 평가 및 데모 실행
 
 ## 저장소 구성
@@ -13,7 +15,8 @@ Livox LiDAR 기반 3D 객체 검출·추적과 결과 검수를 위한 ROS 2 워
 | 경로 | 역할 |
 | --- | --- |
 | `src/pcdet_ros2` | OpenPCDet ROS 2 노드와 launch 파일 |
-| `src/rtk_livox_dataset_tools` | 센서 데이터 기록 및 결과 시각화 도구 |
+| `src/rtk_livox_dataset_tools` | Livox/RTK 토픽 기록, 좌표변환, 품질 확인 및 시각화 도구 |
+| `src/ublox` | u-blox GNSS 드라이버와 ROS 메시지 |
 | `src/ros2_numpy` | ROS 메시지와 NumPy 배열 변환 라이브러리 |
 | `src/vision_msgs_rviz_plugins` | `vision_msgs/Detection3DArray` RViz 플러그인 |
 | `OpenPCDet` | 3D 검출 모델 학습·평가 코드 |
@@ -22,7 +25,7 @@ Livox LiDAR 기반 3D 객체 검출·추적과 결과 검수를 위한 ROS 2 워
 
 ## 실행 환경과 빌드
 
-`entrypoint.bash`는 GPU, host network, X11을 연결하여 기존 Docker 이미지 `ugv_tracker:1.0.0`을 실행합니다. 스크립트의 `PROJECT_DIR`은 현재 저장소의 절대 경로와 일치해야 합니다.
+`entrypoint.bash`는 GPU, host network, X11을 연결하여 기존 Docker 이미지 `anticaffe/ugv_project:1.0.0`을 실행합니다. 스크립트의 `PROJECT_DIR`은 현재 저장소의 절대 경로와 일치해야 합니다.
 
 ```bash
 ./entrypoint.bash
@@ -42,6 +45,7 @@ PCDet 실행에는 CUDA를 지원하는 PyTorch와 OpenPCDet 의존성이 필요
 
 - Livox: 사용하는 장비에 맞는 Livox ROS 2 driver
 - RealSense: `realsense2_camera`
+- NTRIP 사용 시: `ntrip_client`, `rtcm_msgs`
 - PCDet launch: `nav2_common`
 
 빌드 후 등록된 실행 파일은 다음 명령으로 확인할 수 있습니다.
@@ -76,27 +80,75 @@ ros2 launch pcdet_ros2 pcdet.launch.py \
   params_file:="$(ros2 pkg prefix pcdet_ros2)/share/pcdet_ros2/config/pcdet_second.param.yaml"
 ```
 
-미리 준비된 모델별 launch도 있습니다.
-
-```bash
-ros2 launch pcdet_ros2 second_multihead_nds.launch.xml
-ros2 launch pcdet_ros2 pp_multihead_nds.launch.xml
-ros2 launch pcdet_ros2 parta2_free.launch.xml
-```
-
 모델과 가중치 조합은 `config/*.param.yaml`에서 선택합니다. 경로는 설치된 `pcdet_ros2` 패키지 디렉터리를 기준으로 해석됩니다.
 
-## 2. Livox 데이터 수집
+## 2. `rtk_livox_dataset_tools`
 
-Livox driver와 검출·추적 노드를 먼저 실행한 뒤 필요한 토픽을 기록합니다.
+이 패키지는 Livox 드라이버, PCDet 또는 추적 노드를 구현하거나 실행하지 않습니다. 외부 노드가 발행하는 센서 토픽을 기록하고, RTK 데이터를 LiDAR 좌표계로 변환·검수하는 도구입니다.
+
+현재 Livox와 RTK는 서로 다른 launch가 별도 bag으로 기록합니다.
+
+```text
+외부 Livox driver ── /livox/lidar ── livox_collection.launch.py ── Livox bag
+
+u-blox/C099 + NTRIP ── RTK 토픽 ── rtk_collection.launch.py ── RTK bag + 상태 CSV
+
+Livox/RTK bag + calibration YAML ── 후처리·시각화 도구
+```
+
+### Livox PointCloud2 기록
+
+`livox_collection.launch.py`는 지정한 토픽으로 `ros2 bag record`를 실행하는 기록용 wrapper입니다. Livox driver는 별도로 먼저 실행되어 `/livox/lidar`를 발행하고 있어야 합니다.
 
 ```bash
 ros2 launch rtk_livox_dataset_tools livox_collection.launch.py \
   bag_uri:=bags/run_01_livox \
-  record_topics:="/livox/lidar /lr_detections"
+  record_topics:="/livox/lidar"
 ```
 
-포인트클라우드만 기록하려면 `record_topics:="/livox/lidar"`를 사용합니다.
+위 명령은 사실상 다음 명령과 같습니다.
+
+```bash
+ros2 bag record -o bags/run_01_livox /livox/lidar
+```
+
+`record_topics`에 다른 토픽을 지정하면 함께 기록할 수 있지만, 이 launch가 해당 토픽의 생산 노드를 실행해 주지는 않습니다.
+
+### Launch 파일별 역할
+
+| Launch | 읽는 입력 | 실행/처리 | 결과 |
+| --- | --- | --- | --- |
+| `livox_collection.launch.py` | `record_topics`에 지정된 기존 ROS 토픽 | `ros2 bag record` | `bag_uri`의 rosbag |
+| `rtk_collection.launch.py` | u-blox serial 또는 C099 UDP, 외부 NTRIP `/rtcm` | GNSS/NTRIP 실행, RTK 토픽 기록, 상태 모니터 | RTK rosbag, 상태 CSV, 선택적 UDP raw log |
+| `rtk_status_monitor.launch.py` | `/ublox_gps_node/navpvt`, `/fix`, `/fix_velocity`, `/rtcm` | RTK fix/RTCM 상태 판정 | `logs/rtk_status_*.csv` |
+| `rviz_gt_check.launch.py` | calibration YAML, `/fix`, `/fix_velocity` | RTK 위치·속도를 LiDAR 좌표계로 변환하고 RViz 실행 | `/rtk_gt/livox/point`, `/rtk_gt/livox/velocity`, `/rtk_gt/livox/markers` |
+| `realsense_collection.launch.py` | RealSense 장치 또는 기존 point cloud 토픽 | 외부 RealSense driver 실행 및 bag 기록 | RealSense rosbag |
+| `realsense_sync_check.launch.py` | RealSense PointCloud2 토픽 2개 | 공통 frame으로 변경하고 두 번째 cloud를 이동하여 RViz 실행 | `/sync_check/rs1/points`, `/sync_check/rs2/points` |
+
+`rtk_collection.launch.py`의 기본 기록 토픽은 다음과 같습니다.
+
+```text
+/ublox_gps_node/navpvt
+/ublox_gps_node/fix
+/ublox_gps_node/fix_velocity
+/rtcm
+```
+
+C099 UDP bridge를 사용할 경우 `start_ublox:=false`, `start_c099_udp:=true`로 설정해야 동일한 RTK 토픽을 두 노드가 동시에 발행하는 것을 피할 수 있습니다.
+
+### 후처리 실행 도구
+
+다음 도구는 launch에 자동으로 포함되지 않으며 필요할 때 `ros2 run`으로 직접 실행합니다.
+
+| 실행 파일 | 입력 | 결과 |
+| --- | --- | --- |
+| `online_lidar_pose_calibrator` | 실시간 `/ublox_gps_node/navpvt`, 안테나 offset YAML | calibration YAML, `/rtk_livox_calibration/phase` |
+| `lidar_pose_calibrator` | RTK bag, 전진/후진/정지 시간 구간, 안테나 offset YAML | calibration YAML |
+| `gt_transformer` | RTK bag의 NavPVT, calibration YAML | LiDAR 좌표계 RTK GT CSV와 metadata YAML |
+| `opencl_dataset_exporter` | Livox bag의 PointCloud2, RTK GT CSV | `points.bin`, `frames.bin`, `rtk_gt.bin`, `metadata.yaml` |
+| `opencl_dataset_visualizer` | exporter가 만든 binary dataset | Point cloud와 보간된 RTK GT를 보여주는 GUI |
+
+`config/dataset_collection.yaml`은 설치 대상에는 포함되지만 현재 어떤 launch나 Python 노드에서도 읽지 않습니다. 해당 파일의 토픽, RTK 품질 임계값과 캘리브레이션 항목은 현재 실행 동작에 영향을 주지 않습니다.
 
 ## TEST
 
@@ -156,12 +208,12 @@ ros2 run rtk_livox_dataset_tools realsense_sync_play \
 | 패키지 | launch | 기능 |
 | --- | --- | --- |
 | `pcdet_ros2` | `pcdet.launch.py` | PCDet 검출·추적 노드 실행 |
-| `pcdet_ros2` | `second_multihead_nds.launch.xml` | SECOND Multihead 설정 실행 |
-| `pcdet_ros2` | `pp_multihead_nds.launch.xml` | PointPillar Multihead 설정 실행 |
-| `pcdet_ros2` | `parta2_free.launch.xml` | Part-A2 Free 설정 실행 |
-| `rtk_livox_dataset_tools` | `livox_collection.launch.py` | Livox/추적 토픽 rosbag 기록 |
+| `rtk_livox_dataset_tools` | `livox_collection.launch.py` | 지정된 기존 토픽을 rosbag으로 기록 |
+| `rtk_livox_dataset_tools` | `rtk_collection.launch.py` | GNSS/NTRIP 실행, RTK 상태 확인 및 rosbag 기록 |
+| `rtk_livox_dataset_tools` | `rtk_status_monitor.launch.py` | RTK 품질 및 RTCM 수신 상태 CSV 기록 |
+| `rtk_livox_dataset_tools` | `rviz_gt_check.launch.py` | RTK 위치·속도를 LiDAR 좌표계 marker로 변환하고 RViz 실행 |
 | `rtk_livox_dataset_tools` | `realsense_collection.launch.py` | RealSense 실행 및 point cloud 기록 |
-| `rtk_livox_dataset_tools` | `realsense_sync_check.launch.py` | 두 RealSense point cloud 비교 |
+| `rtk_livox_dataset_tools` | `realsense_sync_check.launch.py` | 두 RealSense point cloud를 나란히 재발행하고 RViz 실행 |
 
 launch 인자는 다음 명령으로 확인할 수 있습니다.
 
@@ -174,6 +226,14 @@ ros2 launch <PACKAGE> <LAUNCH_FILE> --show-args
 | 실행 파일 | 기능 |
 | --- | --- |
 | `pcdet_ros2 pcdet` | PCDet 검출 및 ByteTrack 추적 |
+| `rtk_livox_dataset_tools c099_udp_bridge` | C099 UDP NMEA를 RTK ROS 토픽으로 변환하고 RTCM 전달 |
+| `rtk_livox_dataset_tools rtk_status_monitor` | RTK 품질 및 RTCM 수신 상태 CSV 기록 |
+| `rtk_livox_dataset_tools online_lidar_pose_calibrator` | 실시간 LiDAR–RTK pose 캘리브레이션 |
+| `rtk_livox_dataset_tools lidar_pose_calibrator` | RTK bag 기반 LiDAR–RTK pose 캘리브레이션 |
+| `rtk_livox_dataset_tools gt_transformer` | RTK NavPVT를 LiDAR 좌표계 GT CSV로 변환 |
+| `rtk_livox_dataset_tools opencl_dataset_exporter` | Livox bag과 RTK GT CSV를 binary dataset으로 변환 |
+| `rtk_livox_dataset_tools opencl_dataset_visualizer` | 변환된 dataset의 point cloud와 RTK GT 시각화 |
+| `rtk_livox_dataset_tools rtk_livox_visualizer` | 실시간 RTK 위치·속도를 LiDAR frame 토픽으로 변환 |
 | `rtk_livox_dataset_tools realsense_sync_viewer` | 두 point cloud 좌표계/위치 조정 후 재발행 |
 | `rtk_livox_dataset_tools realsense_sync_play` | 두 rosbag에 시간 offset을 적용하여 재생 |
 
