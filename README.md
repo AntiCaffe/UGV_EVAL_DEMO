@@ -253,6 +253,26 @@ python3 OpenPCDet/tools/test.py --cfg_file <MODEL_YAML> --ckpt <CHECKPOINT>
 python3 OpenPCDet/tools/demo.py --cfg_file <MODEL_YAML> --ckpt <CHECKPOINT> --data_path <POINT_CLOUD>
 ```
 
+### `demo.py` 모델별 실행 예시
+
+다음 명령은 `OpenPCDet/tools` 디렉터리를 기준으로 실행합니다.
+
+```bash
+cd OpenPCDet/tools
+```
+
+CenterPoint:
+
+```bash
+python demo.py --cfg_file cfgs/kitti_models/centerpoint_aug.yaml --ckpt checkpoints/checkpoint_epoch_80.pth --data_path ../../kitti_samples/velodyne/000000.bin
+```
+
+SECOND:
+
+```bash
+python demo.py --cfg_file cfgs/kitti_models/second_KN.yaml --ckpt checkpoints/second_KN.pth --data_path ../../kitti_samples/velodyne/000000.bin
+```
+
 ## 테스트
 
 ```bash
