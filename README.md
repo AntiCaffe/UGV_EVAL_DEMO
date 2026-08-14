@@ -25,21 +25,61 @@ Livox LiDAR 기반 3D 객체 검출·추적과 RTK GNSS ground truth 검수를 �
 
 ## 실행 환경과 빌드
 
-`entrypoint.bash`는 GPU, host network, X11을 연결하여 기존 Docker 이미지 `anticaffe/ugv_project:1.0.0`을 실행합니다. 스크립트의 `PROJECT_DIR`은 현재 저장소의 절대 경로와 일치해야 합니다.
+`entrypoint.bash`는 GPU, host network와 X11을 연결하여 Docker 이미지 `anticaffe/ugv_project:1.0.0`을 실행합니다. 다음 순서로 환경을 구성합니다.
 
-```bash
-./entrypoint.bash
-```
+1. `UGV_EVAL_DEMO/entrypoint.bash`를 열고 `PROJECT_DIR`을 현재 `UGV_EVAL_DEMO` 폴더의 절대 경로로 설정합니다.
 
-호스트 또는 컨테이너 안에서 워크스페이스를 빌드합니다.
+   ```bash
+   # 예시
+   PROJECT_DIR="/home/ivl/UGV_EVAL_DEMO"
+   ```
 
-```bash
-source /opt/ros/$ROS_DISTRO/setup.bash
-python3 -m pip install -e OpenPCDet
-rosdep install --from-paths src --ignore-src -r -y
-colcon build --symlink-install
-source install/setup.bash
-```
+2. GUI 프로그램에서 호스트 X11을 사용할 수 있도록 다른 호스트 터미널에서 다음 명령을 실행합니다.
+
+   ```bash
+   xhost +local:docker
+   ```
+
+   매번 실행하지 않으려면 같은 명령을 호스트의 `~/.bashrc`에 등록한 뒤 새 터미널을 열거나 `source ~/.bashrc`를 실행합니다.
+
+3. 호스트의 `UGV_EVAL_DEMO` 폴더에서 컨테이너를 실행합니다.
+
+   ```bash
+   cd /path/to/UGV_EVAL_DEMO
+   ./entrypoint.bash
+   ```
+
+4. 컨테이너 안의 `/project/OpenPCDet`에서 OpenPCDet을 develop 모드로 설치합니다.
+
+   ```bash
+   cd /project/OpenPCDet
+   python setup.py develop
+   ```
+
+5. 컨테이너 안의 `/project`로 이동하여 `cb` alias로 ROS 2 워크스페이스를 빌드합니다.
+
+   ```bash
+   cd /project
+   cb
+   ```
+
+   `cb` alias가 등록되어 있지 않다면 다음 명령을 사용합니다.
+
+   ```bash
+   colcon build
+   ```
+
+6. 같은 `/project` 폴더에서 `si` alias로 빌드 결과를 현재 셸에 반영합니다.
+
+   ```bash
+   si
+   ```
+
+   `si` alias가 등록되어 있지 않다면 다음 명령을 사용합니다.
+
+   ```bash
+   source install/setup.bash
+   ```
 
 PCDet 실행에는 CUDA를 지원하는 PyTorch와 OpenPCDet 의존성이 필요합니다. 일부 launch는 저장소 밖의 드라이버를 호출하므로 기능별로 다음 패키지가 추가로 필요합니다.
 
