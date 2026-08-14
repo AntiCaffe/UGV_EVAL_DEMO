@@ -97,8 +97,13 @@ def main():
             load_data_to_gpu(data_dict)
             pred_dicts, _ = model.forward(data_dict)
 
+            # These checkpoints output the box z coordinate at the bottom face,
+            # while the visualizers expect the geometric center of the box.
+            vis_boxes = pred_dicts[0]['pred_boxes'].clone()
+            vis_boxes[:, 2] += vis_boxes[:, 5] / 2
+
             V.draw_scenes(
-                points=data_dict['points'][:, 1:], ref_boxes=pred_dicts[0]['pred_boxes'],
+                points=data_dict['points'][:, 1:], ref_boxes=vis_boxes,
                 ref_scores=pred_dicts[0]['pred_scores'], ref_labels=pred_dicts[0]['pred_labels']
             )
 
