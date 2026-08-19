@@ -20,7 +20,7 @@ def generate_launch_description():
 
     # Custom file 
     # config_file = 'pcdet_second.param.yaml'
-    # config_file = 'pcdet_center.param.yaml'
+    config_file = 'pcdet_center.param.yaml'
 
     # Basic file
     # config_file = 'pcdet_centerpont_pillar_param.yaml'

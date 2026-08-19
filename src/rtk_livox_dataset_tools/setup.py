@@ -30,8 +30,6 @@ setup(
             "opencl_dataset_exporter = rtk_livox_dataset_tools.opencl_dataset_exporter:main",
             "opencl_dataset_visualizer = rtk_livox_dataset_tools.opencl_dataset_visualizer:main",
             "rtk_livox_visualizer = rtk_livox_dataset_tools.rtk_livox_visualizer:main",
-            "realsense_sync_viewer = rtk_livox_dataset_tools.realsense_sync_viewer:main",
-            "realsense_sync_play = rtk_livox_dataset_tools.realsense_sync_play:main",
         ],
     },
 )
