@@ -19,7 +19,8 @@ fi
 
 container_bootstrap='set -e
 (cd /project/OpenPCDet && python setup.py develop)
-colcon build
+source /opt/ros/foxy/setup.bash
+colcon build --symlink-install
 source /project/install/setup.bash
 exec "$@"'
 

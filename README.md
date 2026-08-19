@@ -25,7 +25,7 @@ Livox LiDAR 기반 3D 객체 검출·추적과 RTK GNSS ground truth 검수를 �
 
 ## 실행 환경과 빌드
 
-`entrypoint.bash`는 GPU, host network와 X11을 연결하여 Docker 이미지 `anticaffe/ugv_project:1.0.0`을 `ugv_project`라는 고정된 컨테이너 이름으로 실행합니다. 컨테이너가 시작되면 OpenPCDet을 develop 모드로 설치하고, `/project`에서 `colcon build`를 실행한 다음 `install/setup.bash`를 자동으로 source하여 shell을 엽니다. 다음 순서로 환경을 구성합니다.
+`entrypoint.bash`는 GPU, host network와 X11을 연결하여 Docker 이미지 `anticaffe/ugv_project:1.0.0`을 `ugv_project`라는 고정된 컨테이너 이름으로 실행합니다. 컨테이너가 시작되면 OpenPCDet을 develop 모드로 설치하고, `/project`에서 `colcon build --symlink-install`을 실행한 다음 `install/setup.bash`를 자동으로 source하여 shell을 엽니다. Python 패키지는 source와 install이 서로 다른 복사본으로 남지 않도록 symlink 방식으로 설치됩니다. 다음 순서로 환경을 구성합니다.
 
 1. Docker 이미지를 다운로드합니다. **호스트 CUDA 환경은 CUDA 11.8 Toolkit 사용을 권장합니다.**
 
@@ -65,7 +65,7 @@ Livox LiDAR 기반 3D 객체 검출·추적과 RTK GNSS ground truth 검수를 �
 
    ```text
    cd /project/OpenPCDet && python setup.py develop
-   cd /project && colcon build
+   cd /project && colcon build --symlink-install
    source /project/install/setup.bash
    ```
 

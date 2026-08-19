@@ -40,27 +40,36 @@ class PCDetROS(Node):
         @param num_features Number of features in each pointcloud data. 4 for Kitti. 5 for NuScenes
         @param device_id CUDA Device ID.
         @param device_memory_fraction Use only the input fraction of the allowed CUDA Memory.
-        @param threshold_array Cutoff threshold array for detections. Even values for detection id, odd values for detection score. Sample: [0, 0.7, 1, 0.5, 2, 0.7].
+        @param threshold_array Per-class high/new-track score thresholds in model label order.
         """
         # ROS2 노드 이름을 'pcdet'으로 설정하고 피라미터와 필요한 객체들을 초기화
         super().__init__('pcdet')
         self.__initParams__()
         self.__initObjects__()
 
-        # BYTETracker 인스턴스 생성하여 객체 추적 수행
-        self.bytetracker = BYTETracker(frame_rate=30)
-
-    def tracker_coord(self, box_coord):
-        
-        # 3D 바운딩 박스 좌표 변환
-        bc = list(map(float, box_coord))
-        x1 = bc[0] - bc[3]/2  # x - width/2
-        x2 = bc[0] + bc[3]/2  # x + width/2
-        y1 = bc[1] - bc[4]/2  # y - height/2
-        y2 = bc[1] + bc[4]/2  # y + height/2
-        z1 = bc[2] - bc[5]/2  # z - depth/2
-        z2 = bc[2] + bc[5]/2  # z + depth/2
-        return [x1, y1, z1, x2, y2, z2]
+        class_thresholds = (
+            self.__thr_arr__ if self.__allow_score_thresholding__ else []
+        )
+        self.bytetracker = BYTETracker(
+            frame_rate=self.__tracker_frame_rate__,
+            high_score_threshold=(
+                0.5 if self.__allow_score_thresholding__
+                else self.__tracker_low_score_threshold__
+            ),
+            class_score_thresholds=class_thresholds,
+            low_score_threshold=self.__tracker_low_score_threshold__,
+            match_threshold=self.__tracker_match_threshold__,
+            second_match_threshold=self.__tracker_second_match_threshold__,
+            unconfirmed_match_threshold=(
+                self.__tracker_unconfirmed_match_threshold__
+            ),
+            max_time_lost=self.__tracker_max_lost_sec__,
+            mahalanobis_gate=self.__tracker_mahalanobis_gate__,
+            lost_velocity_decay=self.__tracker_lost_velocity_decay__,
+        )
+        self.get_logger().info(
+            f'Tracker motion model: {self.bytetracker.motion_model}'
+        )
     
     # Callback function
     def __cloudCB__(self, cloud_msg):
@@ -70,9 +79,21 @@ class PCDetROS(Node):
         scores, dt_box_lidar, types = self.__runTorch__(np_points)
         # dt_box_lidar.shape = (N, 7) -> 보통 [x, y, z, dx, dy, dz, heading] 순서
 
-        # 2) 만약 검출 결과가 없으면 바로 퍼블리시 후 return
+        timestamp = (
+            float(cloud_msg.header.stamp.sec)
+            + float(cloud_msg.header.stamp.nanosec) * 1e-9
+        )
+
+        # 2) 검출이 없는 프레임도 tracker에 전달해야 Lost timeout과
+        #    Kalman prediction이 실제 센서 시간에 맞게 진행된다.
         if scores.size == 0:
-            self.__publishResults__(cloud_msg.header, [])
+            outputs = self.bytetracker.update(
+                np.empty((0, 8), dtype=np.float32),
+                np.empty(0, dtype=np.float32),
+                np.empty(0, dtype=np.float32),
+                timestamp=timestamp,
+            )
+            self.__publishResults__(cloud_msg.header, outputs)
             return
 
         # 3) ByteTracker에 전달할 boxes 생성
@@ -99,9 +120,12 @@ class PCDetROS(Node):
         boxes_for_tracking = np.array(boxes_for_tracking, dtype=np.float32)
 
         # 4) ByteTracker 업데이트 (이때 [x,y,z,w,h,l,yaw,idx]를 전달)
-        outputs = self.bytetracker.update(boxes_for_tracking,
-                                              np.array(scores),
-                                              np.array(types))
+        outputs = self.bytetracker.update(
+            boxes_for_tracking,
+            np.asarray(scores),
+            np.asarray(types),
+            timestamp=timestamp,
+        )
             
         # 5) outputs에는 [x1,y1,z1,x2,y2,z2, track_id, score, cls,
         #    idx, vx, vy, vz, yaw] 형태
@@ -333,18 +357,6 @@ class PCDetROS(Node):
     def __yawToQuaternion__(self, yaw: float) -> Quaternion:
         return Quaternion(axis=[0, 0, 1], radians=yaw)
     
-    def __getPubState__(self, id, score) -> bool:
-        if(not self.__allow_score_thresholding__):
-           return True
-        for i in range(len(self.__thr_arr__)):
-            if(i + 1 == id):
-                if(self.__thr_arr__[i] > score):
-                    return False
-                else:
-                    return True
-        
-        return True
-
     def __readConfig__(self):
         cfg_from_yaml_file(self.__config_file__, cfg, self.__package_folder_path__)
         cfg.DATA_CONFIG._BASE_CONFIG_ = self.__package_folder_path__ + cfg.DATA_CONFIG._BASE_CONFIG_
@@ -375,6 +387,14 @@ class PCDetROS(Node):
         self.declare_parameter("device_memory_fraction", rclpy.Parameter.Type.DOUBLE)
         self.declare_parameter("threshold_array", rclpy.Parameter.Type.DOUBLE_ARRAY)
         self.declare_parameter("output_format", "marker_array")
+        self.declare_parameter("tracker_frame_rate", 10.0)
+        self.declare_parameter("tracker_low_score_threshold", 0.1)
+        self.declare_parameter("tracker_match_threshold", 0.95)
+        self.declare_parameter("tracker_second_match_threshold", 0.98)
+        self.declare_parameter("tracker_unconfirmed_match_threshold", 0.90)
+        self.declare_parameter("tracker_max_lost_sec", 1.0)
+        self.declare_parameter("tracker_mahalanobis_gate", 16.27)
+        self.declare_parameter("tracker_lost_velocity_decay", 0.95)
 
         self.__config_file__ = self.get_parameter("config_file").value
         self.__package_folder_path__ = self.get_parameter("package_folder_path").value
@@ -386,6 +406,28 @@ class PCDetROS(Node):
         self.__device_memory_fraction__ = self.get_parameter("device_memory_fraction").value
         self.__thr_arr__ = self.get_parameter("threshold_array").value
         self.__output_format__ = self.get_parameter("output_format").value
+        self.__tracker_frame_rate__ = self.get_parameter("tracker_frame_rate").value
+        self.__tracker_low_score_threshold__ = self.get_parameter(
+            "tracker_low_score_threshold"
+        ).value
+        self.__tracker_match_threshold__ = self.get_parameter(
+            "tracker_match_threshold"
+        ).value
+        self.__tracker_second_match_threshold__ = self.get_parameter(
+            "tracker_second_match_threshold"
+        ).value
+        self.__tracker_unconfirmed_match_threshold__ = self.get_parameter(
+            "tracker_unconfirmed_match_threshold"
+        ).value
+        self.__tracker_max_lost_sec__ = self.get_parameter(
+            "tracker_max_lost_sec"
+        ).value
+        self.__tracker_mahalanobis_gate__ = self.get_parameter(
+            "tracker_mahalanobis_gate"
+        ).value
+        self.__tracker_lost_velocity_decay__ = self.get_parameter(
+            "tracker_lost_velocity_decay"
+        ).value
 
         valid_output_formats = ('marker_array', 'detection3d_array')
         if self.__output_format__ not in valid_output_formats:

@@ -95,11 +95,28 @@ ros2 launch pcdet_ros2 kitti_bin_publisher.launch.py \
 | config_file | Local Path to the configuration file for the model. |
 | model_file | Local Path to the pre-trained weight for the model. |
 | allow_memory_fractioning | Boolean to activate setting a limit to the GPU Usage. <br>&emsp; Used together with `device_memory_fraction`. |
-| allow_score_thresholding | Boolean to activate the removal of low scored detections. <br>&emsp; Used together with `threshold_array`. |
+| allow_score_thresholding | Use per-class `threshold_array` values for high-confidence association and new tracks. Detections above `tracker_low_score_threshold` remain available for second-stage association. |
 | num_features | Parameter to specify data transformation of pointcloud. <br>&emsp; For `Kitti` the value is `4`. <br>&emsp; For `nuScenes` the value is `5`. |
 | device_id | ID for the GPU to be used. |
 | device_memory_fraction | GPU Memory (in GB) used for the detections. <br>&emsp; Used together with `allow_memory_fractioning`. |
-| threshold_array | Threshold values for low scoring detections. <br>&emsp; Used together with `allow_score_thresholding`. <br>&emsp; See the `config_file` for the list of detections. |
+| threshold_array | Per-class high-score/new-track thresholds in detector label order. |
+| output_format | `marker_array` or `detection3d_array`. |
+| tracker_frame_rate | Fallback input rate used only when message timestamps are unavailable. |
+| tracker_low_score_threshold | Minimum score retained for ByteTrack's low-score second association. |
+| tracker_match_threshold | Maximum first-stage association cost. |
+| tracker_second_match_threshold | Maximum low-score second-stage association cost. |
+| tracker_unconfirmed_match_threshold | Maximum association cost for confirming a new track. |
+| tracker_max_lost_sec | Time in seconds to coast a lost track before removal. |
+| tracker_mahalanobis_gate | Squared 3D-center Mahalanobis gate; `16.27` is approximately 99.9% for 3 DoF. |
+| tracker_lost_velocity_decay | Per-frame velocity retention while a track is lost. |
+
+The tracker uses an EKF-CV motion model whose planar velocity is represented in
+the box yaw frame. Its nonlinear transition and state-dependent Jacobian map
+that velocity into Cartesian motion. It uses the `PointCloud2` header timestamp
+to update the EKF interval, prevents association across detector classes, uses
+yaw-aware 3D IoU, and reports Cartesian velocity converted from the EKF state.
+A newly created track is confirmed on its second high-confidence observation
+(except tracks created in the first input frame).
 
 # License
 

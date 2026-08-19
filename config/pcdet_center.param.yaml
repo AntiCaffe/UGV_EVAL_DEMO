@@ -30,4 +30,14 @@ pcdet:
     num_features: 4
     device_id: 0
     device_memory_fraction: 6.0
-    threshold_array: [1.0, 0.3, 1.0] # [Car, Pedestrian, Bicycle] - 모든 클래스 검출
+    # ByteTrack high-score/new-track threshold: [Car, Pedestrian, Cyclist]
+    # 이보다 낮고 tracker_low_score_threshold 이상인 검출은 2차 association에만 사용
+    threshold_array: [0.5, 0.3, 0.4]
+    tracker_frame_rate: 10.0
+    tracker_low_score_threshold: 0.1
+    tracker_match_threshold: 0.95
+    tracker_second_match_threshold: 0.98
+    tracker_unconfirmed_match_threshold: 0.90
+    tracker_max_lost_sec: 1.0
+    tracker_mahalanobis_gate: 16.27
+    tracker_lost_velocity_decay: 0.95
