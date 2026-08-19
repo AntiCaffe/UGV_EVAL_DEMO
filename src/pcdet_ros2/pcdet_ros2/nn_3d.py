@@ -135,6 +135,7 @@ class Track:
         self.hit_streak = 0
 
     def predict(self):
+        
         mean_state = self.mean.copy()
 
         # Lost 상태 시, 속도·가속도 초기화
@@ -316,7 +317,7 @@ class BYTETracker:
 
         self.frame_id = 0
         # 최대 lost 유지 시간(예: 90 프레임 * frame_rate). 필요에 따라 조정.
-        self.max_time_lost = int(frame_rate * 1)
+        self.max_time_lost = int(frame_rate * 90)
 
         # yaw를 포함한 확장 칼만 필터
         self.kalman_filter = ExtendedKalmanFilterXYZWH()
@@ -338,7 +339,7 @@ class BYTETracker:
           - 각 검출 bbox에 대한 confidence score
 
         object_classes: shape (N,)
-          - 각 검출 bbox에 대한 클래스 (예: 1.0=Car, 2.0=Pedestrian 등)
+          - 각 검출 bbox에 대한 클래스 (예: 1.0 = Car, 2.0 = Pedestrian 등)
         """
         self.frame_id += 1
         activated_tracks = []
@@ -368,10 +369,10 @@ class BYTETracker:
 
 
         # ----------------------------------------------------------------------
-        # 3) 첫 번째 연관 (High-score detection과의 매칭) -> influence ! 
+        # 3) 첫 번째 연관 (High-score detection과의 매칭)
         #    cost matrix 계산(예: iou_distance + 모션 거리 + score fuse 등)
         dists = self.get_dists(track_pool, detections)
-        matches, u_track, u_detection = self.linear_assignment(dists, thresh=1.2) 
+        matches, u_track, u_detection = self.linear_assignment(dists, thresh=1.0)
 
         for t_idx, d_idx in matches:
             track = track_pool[t_idx]
@@ -399,7 +400,7 @@ class BYTETracker:
 
         r_tracked_tracks = [track_pool[i] for i in u_track if track_pool[i].state == State.Tracked]
         dists_second = self.get_dists(r_tracked_tracks, detections_second)
-        matches_second, u_track_second, u_detection_second = self.linear_assignment(dists_second, thresh=0.5)
+        matches_second, u_track_second, u_detection_second = self.linear_assignment(dists_second, thresh=0.7)
 
         for t_idx, d_idx in matches_second:
             track = r_tracked_tracks[t_idx]
@@ -422,7 +423,7 @@ class BYTETracker:
         # 5) unconfirmed(아직 완전히 활성화되지 않은) 트랙과 할당되지 않은 detection 매칭
         u_det_final = [detections[i] for i in u_detection]
         dists_unconfirmed = self.get_dists(unconfirmed, u_det_final)
-        matches_unconfirmed, u_unconfirmed, u_detection_final = self.linear_assignment(dists_unconfirmed, thresh=0.7)
+        matches_unconfirmed, u_unconfirmed, u_detection_final = self.linear_assignment(dists_unconfirmed, thresh=0.6)
 
         for t_idx, d_idx in matches_unconfirmed:
             unconfirmed[t_idx].update(u_det_final[d_idx], self.frame_id)
@@ -440,10 +441,9 @@ class BYTETracker:
             track = u_det_final[new_i]
             # 특정 클래스별로 점수 임계값 다르게 처리 가능
             if track.cls == 'Pedestrian':
-                score_threshold = 0.7
+                score_threshold = 0.5
             else:
-                score_threshold = 0.6     # 0.6
-
+                score_threshold = 0.7
             if track.score < score_threshold:
                 continue
             track.activate(self.kalman_filter, self.frame_id)

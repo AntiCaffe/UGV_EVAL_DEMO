@@ -46,6 +46,7 @@ setup(
     entry_points={
         'console_scripts': [
             'pcdet = pcdet_ros2.pcdet_node:main',
+            'kitti_bin_publisher = pcdet_ros2.kitti_bin_publisher:main',
         ],
     },
 )

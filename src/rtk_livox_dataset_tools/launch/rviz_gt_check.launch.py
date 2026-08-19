@@ -8,7 +8,14 @@ def _rviz_process(context):
     start_rviz = LaunchConfiguration("start_rviz").perform(context).strip().lower()
     if start_rviz not in ("1", "true", "yes", "on"):
         return []
-    return [ExecuteProcess(cmd=["rviz2"], output="screen", name="rviz2")]
+    livox_frame = LaunchConfiguration("livox_frame").perform(context)
+    return [
+        ExecuteProcess(
+            cmd=["rviz2", "--fixed-frame", livox_frame],
+            output="screen",
+            name="rviz2",
+        )
+    ]
 
 
 def generate_launch_description():

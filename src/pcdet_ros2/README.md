@@ -73,6 +73,21 @@ P.S. Symlink connections will save a lot of storage space and help organise the 
 ros2 launch pcdet_ros2 pcdet.launch.py
 ```
 
+Replay the linked `kitti_samples/velodyne` sequence as `PointCloud2` input:
+
+```console
+ros2 launch pcdet_ros2 kitti_bin_publisher.launch.py
+```
+
+The publisher defaults to `/livox/lidar`, 10 Hz, and continuous looping. Its
+main options can be overridden from the launch command:
+
+```console
+ros2 launch pcdet_ros2 kitti_bin_publisher.launch.py \
+  input_topic:=/livox/lidar publish_rate_hz:=10.0 loop:=true \
+  frame_id:=velodyne dataset_path:=/path/to/kitti_samples
+```
+
 # Parameters
 
 | Parameter | Description |

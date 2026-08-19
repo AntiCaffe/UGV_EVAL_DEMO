@@ -10,6 +10,8 @@
   <exec_depend>vision_msgs</exec_depend>
   <exec_depend>visualization_msgs</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>ros2_numpy</exec_depend>
 
   <test_depend>ament_copyright</test_depend>

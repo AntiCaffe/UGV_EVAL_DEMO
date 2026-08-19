@@ -1,19 +1,19 @@
-"""PCDet ROS node with selectable MarkerArray or Detection3DArray output."""
+"""! @brief Defines the PCDetROS Class.
+The package subscribes to the pointcloud message and publishes instances of object detection.
+"""
 
 # Imports
 import rclpy 
 from rclpy.node import Node
 import ros2_numpy
-from geometry_msgs.msg import Point
+from vision_msgs.msg import Detection3DArray
+from vision_msgs.msg import Detection3D
+from vision_msgs.msg import ObjectHypothesisWithPose
 from sensor_msgs.msg import PointCloud2
-from visualization_msgs.msg import Marker, MarkerArray
-from vision_msgs.msg import (
-    Detection3D,
-    Detection3DArray,
-    ObjectHypothesisWithPose,
-)
 
+import argparse
 import numpy as np
+from typing import List
 import torch
 
 from pyquaternion import Quaternion
@@ -48,7 +48,7 @@ class PCDetROS(Node):
         self.__initObjects__()
 
         # BYTETracker 인스턴스 생성하여 객체 추적 수행
-        self.bytetracker = BYTETracker(frame_rate = 30)
+        self.bytetracker = BYTETracker(frame_rate=30)
 
     def tracker_coord(self, box_coord):
         
@@ -64,22 +64,23 @@ class PCDetROS(Node):
     
     # Callback function
     def __cloudCB__(self, cloud_msg):
+        
+        out_msg = Detection3DArray()
+        out_msg.header.frame_id = cloud_msg.header.frame_id
+        out_msg.header.stamp = self.get_clock().now().to_msg()
+
         # 1) 포인트 클라우드 -> 모델 추론
         cloud_array = ros2_numpy.point_cloud2.pointcloud2_to_array(cloud_msg)
         np_points = self.__convertCloudFormat__(cloud_array)
         scores, dt_box_lidar, types = self.__runTorch__(np_points)
         # dt_box_lidar.shape = (N, 7) -> 보통 [x, y, z, dx, dy, dz, heading] 순서
-        
+
 
         # 2) 만약 검출 결과가 없으면 바로 퍼블리시 후 return
         if scores.size == 0:
-            self.__publishResults__(cloud_msg.header, [])
+            out_msg.detections = []
+            self.__pub_det__.publish(out_msg)
             return
-
-        mask = (types == 2.0)
-        scores = scores[mask]
-        dt_box_lidar = dt_box_lidar[mask]
-        types = types[mask]
 
         # 3) ByteTracker에 전달할 boxes 생성
         #    [x, y, z, w, h, l, yaw, idx]
@@ -109,76 +110,18 @@ class PCDetROS(Node):
                                               np.array(scores),
                                               np.array(types))
             
-        # 5) outputs에는 [x1,y1,z1,x2,y2,z2, track_id, score, cls,
-        #    idx, vx, vy, vz, yaw] 형태
-        self.__publishResults__(cloud_msg.header, outputs)
-
-    def __publishResults__(self, header, outputs):
-        """Publish tracking results in the selected output message format."""
-        if self.__output_format__ == 'marker_array':
-            self.__publishMarkers__(header, outputs)
-        else:
-            self.__publishDetections__(header, outputs)
-
-    def __publishDetections__(self, header, outputs):
-        """Publish tracking results as a vision_msgs Detection3DArray."""
-        class_map = {
-            1.0: 'Car',
-            2.0: 'Pedestrian',
-            3.0: 'Cyclist'
-        }
-        message = Detection3DArray()
-        message.header = header
-
-        for track_res in outputs:
-            x1, y1, z1, x2, y2, z2 = track_res[0:6]
-            track_id = int(track_res[6])
-            track_score = float(track_res[7])
-            object_class = float(track_res[8])
-            vx, vy, vz = track_res[10:13]
-            yaw = float(track_res[13])
-
-            detection = Detection3D()
-            detection.header = header
-            detection.tracking_id = str(track_id)
-            detection.is_tracking = True
-            detection.bbox.center.position.x = float((x1 + x2) / 2.0)
-            detection.bbox.center.position.y = float((y1 + y2) / 2.0)
-            detection.bbox.center.position.z = float((z1 + z2) / 2.0)
-            detection.bbox.size.x = float(x2 - x1)
-            detection.bbox.size.y = float(y2 - y1)
-            detection.bbox.size.z = float(z2 - z1)
-
-            quat = self.__yawToQuaternion__(yaw)
-            detection.bbox.center.orientation.x = float(quat[1])
-            detection.bbox.center.orientation.y = float(quat[2])
-            detection.bbox.center.orientation.z = float(quat[3])
-            detection.bbox.center.orientation.w = float(quat[0])
-
-            hypothesis = ObjectHypothesisWithPose()
-            hypothesis.id = class_map.get(object_class, 'Unknown')
-            hypothesis.score = track_score
-            hypothesis.pose.pose.position.x = float(vx)
-            hypothesis.pose.pose.position.y = float(vy)
-            hypothesis.pose.pose.position.z = float(vz)
-            detection.results.append(hypothesis)
-            message.detections.append(detection)
-
-        self.__pub_det__.publish(message)
-
-    def __publishMarkers__(self, header, outputs):
-        """Publish boxes, labels, and tracking velocity in one MarkerArray."""
+        # 5) outputs에는 [x1,y1,z1,x2,y2,z2, track_id, score, cls, idx, vx, vy, vz, yaw] 형태
+        #    해당 내용을 vision_msgs Detection3D 형식으로 변환
+        #    이하 기존 코드와 동일
         class_map = {
             1.0: "Car",
             2.0: "Pedestrian",
             3.0: "Cyclist"
         }
-
-        marker_array = MarkerArray()
-        delete_all = Marker()
-        delete_all.header = header
-        delete_all.action = Marker.DELETEALL
-        marker_array.markers.append(delete_all)
+            
+        final_msg = Detection3DArray()
+        final_msg.header.frame_id = cloud_msg.header.frame_id
+        final_msg.header.stamp = self.get_clock().now().to_msg()
 
         for track_res in outputs:
             """
@@ -196,6 +139,7 @@ class PCDetROS(Node):
             track_id                    = int(track_res[6])
             track_score                 = float(track_res[7])
             object_class                = track_res[8]
+            detection_idx               = int(track_res[9])  # 필요하면 사용
             vx, vy, vz                  = track_res[10:13]
             yaw                         = track_res[13]
                 
@@ -212,88 +156,41 @@ class PCDetROS(Node):
             # 3) Orientation(회전값) -> 쿼터니언 값으로 변환
             quat = self.__yawToQuaternion__(yaw)
 
-            box_marker = Marker()
-            box_marker.header = header
-            box_marker.ns = 'pcdet_boxes'
-            box_marker.id = track_id
-            box_marker.type = Marker.CUBE
-            box_marker.action = Marker.ADD
-            box_marker.pose.position.x = float(center_x)
-            box_marker.pose.position.y = float(center_y)
-            box_marker.pose.position.z = float(center_z)
-            box_marker.pose.orientation.x = float(quat[1])
-            box_marker.pose.orientation.y = float(quat[2])
-            box_marker.pose.orientation.z = float(quat[3])
-            box_marker.pose.orientation.w = float(quat[0])
-            box_marker.scale.x = max(1e-3, float(size_x))
-            box_marker.scale.y = max(1e-3, float(size_y))
-            box_marker.scale.z = max(1e-3, float(size_z))
-            self.__setMarkerColor__(box_marker, object_class, 0.35)
-            marker_array.markers.append(box_marker)
+            # 4) 메시지 생성
+            det = Detection3D()
+            det.header = final_msg.header
 
-            speed = float(np.linalg.norm([vx, vy, vz]))
-            text_marker = Marker()
-            text_marker.header = header
-            text_marker.ns = 'pcdet_labels'
-            text_marker.id = track_id
-            text_marker.type = Marker.TEXT_VIEW_FACING
-            text_marker.action = Marker.ADD
-            text_marker.pose.position.x = float(center_x)
-            text_marker.pose.position.y = float(center_y)
-            text_marker.pose.position.z = float(center_z + size_z * 0.6)
-            text_marker.pose.orientation.w = 1.0
-            text_marker.scale.z = max(0.2, float(size_z) * 0.25)
-            text_marker.color.r = 1.0
-            text_marker.color.g = 1.0
-            text_marker.color.b = 1.0
-            text_marker.color.a = 1.0
-            text_marker.text = (
-                f'{object_class_str} ID:{track_id} '
-                f'{track_score:.2f} v:{speed:.2f}m/s '
-                f'({float(vx):.2f}, {float(vy):.2f}, {float(vz):.2f})'
-            )
-            marker_array.markers.append(text_marker)
+            # bbox 중심좌표 및 크기 설정
+            det.bbox.center.position.x = float(center_x)
+            det.bbox.center.position.y = float(center_y)
+            det.bbox.center.position.z = float(center_z)
+            det.bbox.size.x = float(size_x)
+            det.bbox.size.y = float(size_y)
+            det.bbox.size.z = float(size_z)
 
-            velocity_marker = Marker()
-            velocity_marker.header = header
-            velocity_marker.ns = 'pcdet_velocity'
-            velocity_marker.id = track_id
-            velocity_marker.type = Marker.ARROW
-            velocity_marker.action = Marker.ADD
-            velocity_marker.pose.orientation.w = 1.0
-            velocity_marker.points = [
-                Point(
-                    x=float(center_x),
-                    y=float(center_y),
-                    z=float(center_z)
-                ),
-                Point(
-                    x=float(center_x + vx),
-                    y=float(center_y + vy),
-                    z=float(center_z + vz)
-                )
-            ]
-            velocity_marker.scale.x = 0.08
-            velocity_marker.scale.y = 0.16
-            velocity_marker.scale.z = 0.22
-            self.__setMarkerColor__(velocity_marker, object_class, 1.0)
-            marker_array.markers.append(velocity_marker)
+            # 회전값(orientation) 설정
+            det.bbox.center.orientation.x = quat[1]
+            det.bbox.center.orientation.y = quat[2]
+            det.bbox.center.orientation.z = quat[3]
+            det.bbox.center.orientation.w = quat[0]
 
-        self.__pub_det__.publish(marker_array)
+            # 추적 ID 및 score 설정
+            det.tracking_id = str(track_id)
+            det.is_tracking = True  # 추적된 결과이므로 True
+                
+            hypothesis = ObjectHypothesisWithPose()
+            hypothesis.id = str(object_class_str)  # cls
+            hypothesis.score = track_score
 
-    @staticmethod
-    def __setMarkerColor__(marker, object_class, alpha):
-        """Assign a stable color to each detector class."""
-        colors = {
-            1.0: (0.1, 0.4, 1.0),
-            2.0: (1.0, 0.2, 0.2),
-            3.0: (0.2, 1.0, 0.3),
-        }
-        red, green, blue = colors.get(float(object_class), (1.0, 1.0, 0.0))
-        marker.color.r = red
-        marker.color.g = green
-        marker.color.b = blue
-        marker.color.a = alpha
+            # (필터링된 속도를 쓰고 싶다면 [13], [14], [15] 참조)
+            hypothesis.pose.pose.position.x = float(vx)
+            hypothesis.pose.pose.position.y = float(vy)
+            hypothesis.pose.pose.position.z = float(vz)
+                
+            det.results.append(hypothesis)
+            final_msg.detections.append(det)
+            
+        self.__pub_det__.publish(final_msg)
                        
         
     def __convertCloudFormat__(self, cloud_array, remove_nans=True, dtype=np.float64):
@@ -312,8 +209,7 @@ class PCDetROS(Node):
 
     def __runTorch__(self, points):
         if len(points) == 0:
-            empty = np.empty(0, dtype=np.float32)
-            return empty, np.empty((0, 7), dtype=np.float32), empty
+            return 0, 0, 0
         
         self.__points__ = points.reshape([-1, self.__num_features__])
 
@@ -342,6 +238,7 @@ class PCDetROS(Node):
     def __getPubState__(self, id, score) -> bool:
         if(not self.__allow_score_thresholding__):
            return True
+        
         for i in range(len(self.__thr_arr__)):
             if(i + 1 == id):
                 if(self.__thr_arr__[i] > score):
@@ -380,7 +277,6 @@ class PCDetROS(Node):
         self.declare_parameter("device_id", rclpy.Parameter.Type.INTEGER)
         self.declare_parameter("device_memory_fraction", rclpy.Parameter.Type.DOUBLE)
         self.declare_parameter("threshold_array", rclpy.Parameter.Type.DOUBLE_ARRAY)
-        self.declare_parameter("output_format", "marker_array")
 
         self.__config_file__ = self.get_parameter("config_file").value
         self.__package_folder_path__ = self.get_parameter("package_folder_path").value
@@ -391,14 +287,6 @@ class PCDetROS(Node):
         self.__device_id__ = self.get_parameter("device_id").value
         self.__device_memory_fraction__ = self.get_parameter("device_memory_fraction").value
         self.__thr_arr__ = self.get_parameter("threshold_array").value
-        self.__output_format__ = self.get_parameter("output_format").value
-
-        valid_output_formats = ('marker_array', 'detection3d_array')
-        if self.__output_format__ not in valid_output_formats:
-            raise ValueError(
-                'output_format must be one of: '
-                + ', '.join(valid_output_formats)
-            )
 
         self.__config_file__ = self.__package_folder_path__ + "/" + self.__config_file__
         self.__model_file__ = self.__package_folder_path__ + "/" + self.__model_file__
@@ -411,15 +299,9 @@ class PCDetROS(Node):
                                                   "input", 
                                                   self.__cloudCB__, 
                                                   10)
-        output_type = (
-            MarkerArray
-            if self.__output_format__ == 'marker_array'
-            else Detection3DArray
-        )
-        self.__pub_det__ = self.create_publisher(output_type, "output", 10)
-        self.get_logger().info(
-            f'Output format: {self.__output_format__} on topic output'
-        )
+        self.__pub_det__ = self.create_publisher(Detection3DArray,
+                                                 "output",
+                                                 10)
     
 
 def main(args=None):
