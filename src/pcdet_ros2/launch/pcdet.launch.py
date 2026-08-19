@@ -18,11 +18,12 @@ def generate_launch_description():
     package_name = 'pcdet_ros2'
     package_dir = get_package_share_directory(package_name)
 
-    # custom file 
-    config_file = 'pcdet_second.param.yaml'
+    # Custom file 
+    # config_file = 'pcdet_second.param.yaml'
     # config_file = 'pcdet_center.param.yaml'
-    # config_file = 'pcdet_centerpont_pillar_param.yaml'
 
+    # Basic file
+    # config_file = 'pcdet_centerpont_pillar_param.yaml'
     # config_file = 'pcdet_GLE.param.yaml'
     # config_file = 'pcdet_hednet.param.yaml'
     # config_file = 'pcdet_parta2_free.param.yaml'

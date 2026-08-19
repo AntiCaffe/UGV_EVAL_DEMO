@@ -22,8 +22,8 @@ pcdet:
     # model_file: "checkpoints/pv_rcnn_8369.pth"
     
     # SECOND 모델로 복구 (원래 안정적인 모델)
-    config_file: "cfgs/kitti_models/centerpoint_base.yaml"
-    model_file: "checkpoints/checkpoint_epoch_100.pth"
+    config_file: "cfgs/kitti_models/centerpoint_aug.yaml"
+    model_file: "checkpoints/checkpoint_epoch_80.pth"
 
     allow_memory_fractioning: False
     allow_score_thresholding: True

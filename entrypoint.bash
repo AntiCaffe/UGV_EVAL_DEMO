@@ -5,6 +5,9 @@ set -euo pipefail
 #이미지 이름
 IMAGE="anticaffe/ugv_project:1.0.0"
 
+#컨테이너 이름
+CONTAINER_NAME="ugv_project"
+
 #프로젝트 폴더 경로
 PROJECT_DIR="/home/ivl/UGV_EVAL_DEMO" 
 
@@ -14,7 +17,14 @@ else
   container_command=("$@")
 fi
 
+container_bootstrap='set -e
+(cd /project/OpenPCDet && python setup.py develop)
+colcon build
+source /project/install/setup.bash
+exec "$@"'
+
 exec docker run --rm -it \
+  --name "${CONTAINER_NAME}" \
   --gpus all \
   --network host \
   --workdir /project \
@@ -30,4 +40,4 @@ exec docker run --rm -it \
   -v /dev/dri:/dev/dri \
   --device=/dev/dri \
   "${IMAGE}" \
-  "${container_command[@]}"
+  bash -lc "${container_bootstrap}" bash "${container_command[@]}"

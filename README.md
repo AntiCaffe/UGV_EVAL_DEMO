@@ -26,7 +26,7 @@ Livox LiDAR 기반 3D 객체 검출·추적과 RTK GNSS ground truth 검수를 �
 
 ## 실행 환경과 빌드
 
-`entrypoint.bash`는 GPU, host network와 X11을 연결하여 Docker 이미지 `anticaffe/ugv_project:1.0.0`을 실행합니다. 다음 순서로 환경을 구성합니다.
+`entrypoint.bash`는 GPU, host network와 X11을 연결하여 Docker 이미지 `anticaffe/ugv_project:1.0.0`을 `ugv_project`라는 고정된 컨테이너 이름으로 실행합니다. 컨테이너가 시작되면 OpenPCDet을 develop 모드로 설치하고, `/project`에서 `colcon build`를 실행한 다음 `install/setup.bash`를 자동으로 source하여 shell을 엽니다. 다음 순서로 환경을 구성합니다.
 
 1. Docker 이미지를 다운로드합니다. **호스트 CUDA 환경은 CUDA 11.8 Toolkit 사용을 권장합니다.**
 
@@ -62,37 +62,15 @@ Livox LiDAR 기반 3D 객체 검출·추적과 RTK GNSS ground truth 검수를 �
    ./entrypoint.bash
    ```
 
-6. 컨테이너 안의 `/project/OpenPCDet`에서 OpenPCDet을 develop 모드로 설치합니다.
+6. `entrypoint.bash`를 실행할 때마다 다음 초기화 작업이 자동으로 수행됩니다.
 
-   ```bash
-   cd /project/OpenPCDet
-   python setup.py develop
+   ```text
+   cd /project/OpenPCDet && python setup.py develop
+   cd /project && colcon build
+   source /project/install/setup.bash
    ```
 
-7. 컨테이너 안의 `/project`로 이동하여 `cb` alias로 ROS 2 워크스페이스를 빌드합니다.
-
-   ```bash
-   cd /project
-   cb
-   ```
-
-   `cb` alias가 등록되어 있지 않다면 다음 명령을 사용합니다.
-
-   ```bash
-   colcon build
-   ```
-
-8. 같은 `/project` 폴더에서 `si` alias로 빌드 결과를 현재 셸에 반영합니다.
-
-   ```bash
-   si
-   ```
-
-   `si` alias가 등록되어 있지 않다면 다음 명령을 사용합니다.
-
-   ```bash
-   source install/setup.bash
-   ```
+   초기화가 끝나면 컨테이너 shell이 열립니다. 컨테이너 이름이 고정되어 있으므로 이미 실행 중인 `ugv_project` 컨테이너가 있으면 새 컨테이너는 시작되지 않습니다. 기존 컨테이너에는 `docker exec -it ugv_project bash`로 접속할 수 있습니다.
 
 PCDet 실행에는 CUDA를 지원하는 PyTorch와 OpenPCDet 의존성이 필요합니다. 일부 launch는 저장소 밖의 드라이버를 호출하므로 기능별로 다음 패키지가 추가로 필요합니다.
 
