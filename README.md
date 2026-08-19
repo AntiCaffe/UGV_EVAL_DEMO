@@ -5,6 +5,7 @@ Livox LiDAR 기반 3D 객체 검출·추적과 RTK GNSS ground truth 검수를 �
 이 저장소에서 실행할 수 있는 주요 기능은 다음과 같습니다.
 
 - OpenPCDet 기반 3D 객체 검출 및 ByteTrack 추적
+- KITTI `.bin` point cloud 시퀀스의 ROS 2 `PointCloud2` 재생
 - Livox PointCloud2와 RTK GNSS 토픽의 개별 rosbag 기록
 - RTK–LiDAR 좌표계 캘리브레이션 및 GT 시각 검수
 - RealSense 2대의 수집·재생 시각 동기화 리허설
@@ -114,6 +115,7 @@ ros2 pkg executables rtk_livox_dataset_tools
 | 패키지 | Launch | 기능 |
 | --- | --- | --- |
 | `pcdet_ros2` | `pcdet.launch.py` | PCDet 검출·추적 노드 실행 |
+| `pcdet_ros2` | `kitti_bin_publisher.launch.py` | KITTI `.bin` 시퀀스를 `PointCloud2`로 재생 |
 | `rtk_livox_dataset_tools` | `livox_collection.launch.py` | 지정된 기존 토픽을 rosbag으로 기록 |
 | `rtk_livox_dataset_tools` | `rtk_collection.launch.py` | GNSS/NTRIP 실행, RTK 상태 확인 및 rosbag 기록 |
 | `rtk_livox_dataset_tools` | `rtk_status_monitor.launch.py` | RTK 품질 및 RTCM 수신 상태 CSV 기록 |
@@ -153,6 +155,48 @@ ros2 launch pcdet_ros2 pcdet.launch.py \
 ```
 
 모델과 가중치 조합은 `config/*.param.yaml`에서 선택합니다. 경로는 설치된 `pcdet_ros2` 패키지 디렉터리를 기준으로 해석됩니다.
+
+#### KITTI `.bin` publisher
+
+`kitti_bin_publisher.launch.py`는 KITTI Velodyne 형식의 `.bin` 파일을 파일명 순서대로 읽어 `sensor_msgs/PointCloud2`로 발행합니다. 각 point는 `float32` 형식의 `x`, `y`, `z`, `intensity` 네 필드로 구성되어야 합니다.
+
+저장소의 기본 샘플(`kitti_samples/velodyne`)을 10 Hz로 반복 재생하려면 다음 명령을 실행합니다.
+
+```bash
+source install/setup.bash
+ros2 launch pcdet_ros2 kitti_bin_publisher.launch.py
+```
+
+기본 출력 토픽은 PCDet 입력과 같은 `/livox/lidar`이므로, 두 터미널에서 publisher와 PCDet launch를 각각 실행하면 KITTI 시퀀스로 검출·추적을 확인할 수 있습니다.
+
+```bash
+# 터미널 1: KITTI point cloud 재생
+ros2 launch pcdet_ros2 kitti_bin_publisher.launch.py
+
+# 터미널 2: PCDet 검출·추적
+ros2 launch pcdet_ros2 pcdet.launch.py
+```
+
+다른 KITTI 데이터셋을 사용할 때는 KITTI root 또는 `.bin` 파일이 들어 있는 `velodyne` 디렉터리를 `dataset_path`에 지정합니다.
+
+```bash
+ros2 launch pcdet_ros2 kitti_bin_publisher.launch.py \
+  dataset_path:=/path/to/kitti/training/velodyne \
+  input_topic:=/livox/lidar \
+  frame_id:=velodyne \
+  publish_rate_hz:=10.0 \
+  loop:=true
+```
+
+| 인자 | 기본값 | 설명 |
+| --- | --- | --- |
+| `dataset_path` | 빈 문자열 | KITTI root 또는 `velodyne` 디렉터리. 비어 있으면 `pcdet_ros2/kitti_samples` symlink를 탐색 |
+| `input_topic` | `/livox/lidar` | `PointCloud2` 출력 토픽 |
+| `frame_id` | `velodyne` | 출력 message의 frame ID |
+| `publish_rate_hz` | `10.0` | point cloud 발행 주기(Hz, 0보다 커야 함) |
+| `loop` | `true` | 마지막 파일 발행 후 첫 파일부터 다시 재생할지 여부 |
+
+한 번만 재생하려면 `loop:=false`를 사용합니다. 인자를 생략했는데 기본 샘플을 찾지 못하면 `dataset_path`를 절대 경로로 지정하십시오.
 
 ### `rtk_livox_dataset_tools`
 
