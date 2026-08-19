@@ -70,7 +70,15 @@ Livox LiDAR 기반 3D 객체 검출·추적과 RTK GNSS ground truth 검수를 �
    source /project/install/setup.bash
    ```
 
-   초기화가 끝나면 컨테이너 shell이 열립니다. 컨테이너 이름이 고정되어 있으므로 이미 실행 중인 `ugv_project` 컨테이너가 있으면 새 컨테이너는 시작되지 않습니다. 기존 컨테이너에는 `docker exec -it ugv_project bash`로 접속할 수 있습니다.
+   초기화가 끝나면 컨테이너 shell이 열립니다. 컨테이너 이름이 고정되어 있으므로 이미 실행 중인 `ugv_project` 컨테이너가 있으면 새 컨테이너는 시작되지 않습니다.
+
+### 실행 중인 컨테이너에 다시 접속
+
+`ugv_project` 컨테이너가 이미 실행 중이라면 새 터미널에서 다음 명령으로 접속합니다.
+
+```bash
+docker exec -it ugv_project bash
+```
 
 PCDet 실행에는 CUDA를 지원하는 PyTorch와 OpenPCDet 의존성이 필요합니다. 일부 launch는 저장소 밖의 드라이버를 호출하므로 기능별로 다음 패키지가 추가로 필요합니다.
 
