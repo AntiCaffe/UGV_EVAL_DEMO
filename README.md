@@ -1,127 +1,101 @@
 # UGV_EVAL_DEMO
 
-Livox LiDAR 기반 3D 객체 검출·추적과 RTK GNSS ground truth 검수를 위한 ROS 2 워크스페이스입니다.
+Livox LiDAR 기반 3D 객체 검출·추적과 RTK GNSS ground truth 검수를 위한
+ROS 2 Foxy 워크스페이스입니다.
 
-이 저장소에서 실행할 수 있는 주요 기능은 다음과 같습니다.
+## 한눈에 보기
 
-- OpenPCDet 기반 3D 객체 검출 및 ByteTrack 추적
-- KITTI `.bin` point cloud 시퀀스의 ROS 2 `PointCloud2` 재생
-- 기존 Livox/RTK rosbag의 누적 데이터셋 변환
-- 기존 RTK–LiDAR calibration 기반 GT 변환 및 시각 검수
-- OpenPCDet 학습, 평가 및 데모 실행
+| 목적 | 실행 파일 | 핵심 입력 | 결과 |
+| --- | --- | --- | --- |
+| 실시간/KITTI 검출·추적 | `pcdet.launch.py` | `/livox/lidar` | `/lr_detections` |
+| KITTI point cloud 재생 | `kitti_bin_publisher.launch.py` | KITTI `.bin` 시퀀스 | `/livox/lidar` |
+| RTK–Livox GT 검수 | `rviz_gt_check.launch.py` | Livox/RTK rosbag + calibration | rosbag 재생 + RViz GT marker |
+| 누적 데이터셋 파싱 | `accumulated_bag_exporter.launch.py` | 검수한 rosbag + calibration | 누적 `.bin` + RTK CSV |
+| 오프라인 검출·추적 | `tracking_demo.py` | 누적 `.bin` 시퀀스 | ByteTrack 결과 TXT/시각화 |
 
-## 저장소 구성
+Livox/RTK 데이터는 아래 순서로 처리합니다.
 
-| 경로 | 역할 |
-| --- | --- |
-| `src/pcdet_ros2` | OpenPCDet ROS 2 노드와 launch 파일 |
-| `src/rtk_livox_dataset_tools` | Livox/RTK bag 후처리, 좌표변환 및 시각화 도구 |
-| `src/ublox` | u-blox GNSS 드라이버와 ROS 메시지 |
-| `src/ros2_numpy` | ROS 메시지와 NumPy 배열 변환 라이브러리 |
-| `src/vision_msgs_rviz_plugins` | `vision_msgs/Detection3DArray` RViz 플러그인 |
-| `OpenPCDet` | 3D 검출 모델 학습·평가 코드 |
-| `cfgs`, `config`, `checkpoints` | PCDet 모델 설정, ROS 파라미터 및 가중치 |
-| `docs` | 데이터셋 및 실행 관련 보조 문서 |
+```text
+rosbag + calibration
+  → 1. RViz에서 GT 정렬 검수
+  → 2. accumulated 데이터셋 파싱
+  → 3. OpenPCDet 검출·ByteTrack 추적
+```
 
-## 실행 환경과 빌드
+## 1. 빠른 시작
 
-`entrypoint.bash`는 GPU, host network와 X11을 연결하여 Docker 이미지 `anticaffe/ugv_project:1.0.0`을 `ugv_project`라는 고정된 컨테이너 이름으로 실행합니다. 컨테이너가 시작되면 OpenPCDet을 develop 모드로 설치하고, `/project`에서 `colcon build --symlink-install`을 실행한 다음 `install/setup.bash`를 자동으로 source하여 shell을 엽니다. Python 패키지는 source와 install이 서로 다른 복사본으로 남지 않도록 symlink 방식으로 설치됩니다. 다음 순서로 환경을 구성합니다.
+### 준비 사항
 
-1. Docker 이미지를 다운로드합니다. **호스트 CUDA 환경은 CUDA 11.8 Toolkit 사용을 권장합니다.**
+- NVIDIA GPU와 Docker GPU runtime
+- Docker 이미지 `anticaffe/ugv_project:1.0.0`
+- GUI/RViz 사용 시 호스트 X11 접근 권한
+- 권장 호스트 CUDA Toolkit: 11.8
 
-   ```bash
-   docker pull anticaffe/ugv_project:1.0.0
-   ```
+### 최초 실행
 
-2. GitHub에서 저장소를 clone합니다.
+```bash
+docker pull anticaffe/ugv_project:1.0.0
+git clone https://github.com/AntiCaffe/UGV_EVAL_DEMO
+cd UGV_EVAL_DEMO
+```
 
-   ```bash
-   git clone https://github.com/AntiCaffe/UGV_EVAL_DEMO
-   ```
+[entrypoint.bash](entrypoint.bash)의 `PROJECT_DIR`을 현재 저장소의 절대 경로로
+설정합니다.
 
-3. `UGV_EVAL_DEMO/entrypoint.bash`를 열고 `PROJECT_DIR`을 현재 `UGV_EVAL_DEMO` 폴더의 절대 경로로 설정합니다.
+```bash
+PROJECT_DIR="/home/ivl/UGV_EVAL_DEMO"
+```
 
-   ```bash
-   # 예시
-   PROJECT_DIR="/home/ivl/UGV_EVAL_DEMO"
-   ```
+RViz/Open3D를 사용할 호스트 터미널에서 X11을 허용한 뒤 컨테이너를 실행합니다.
 
-4. GUI 프로그램에서 호스트 X11을 사용할 수 있도록 다른 호스트 터미널에서 다음 명령을 실행합니다.
+```bash
+xhost +local:docker
+./entrypoint.bash
+```
 
-   ```bash
-   xhost +local:docker
-   ```
+`entrypoint.bash`는 `ugv_project` 컨테이너를 생성하고 다음 작업을 자동으로
+수행한 뒤 `/project` shell을 엽니다.
 
-   매번 실행하지 않으려면 같은 명령을 호스트의 `~/.bashrc`에 등록한 뒤 새 터미널을 열거나 `source ~/.bashrc`를 실행합니다.
-
-5. 호스트의 `UGV_EVAL_DEMO` 폴더에서 컨테이너를 실행합니다.
-
-   ```bash
-   cd /path/to/UGV_EVAL_DEMO
-   ./entrypoint.bash
-   ```
-
-6. `entrypoint.bash`를 실행할 때마다 다음 초기화 작업이 자동으로 수행됩니다.
-
-   ```text
-   cd /project/OpenPCDet && python setup.py develop
-   cd /project && colcon build --symlink-install
-   source /project/install/setup.bash
-   ```
-
-   초기화가 끝나면 컨테이너 shell이 열립니다. 컨테이너 이름이 고정되어 있으므로 이미 실행 중인 `ugv_project` 컨테이너가 있으면 새 컨테이너는 시작되지 않습니다.
+```text
+cd /project/OpenPCDet && python setup.py develop
+cd /project && colcon build --symlink-install
+source /project/install/setup.bash
+```
 
 ### 실행 중인 컨테이너에 다시 접속
-
-`ugv_project` 컨테이너가 이미 실행 중이라면 새 터미널에서 접속한 뒤 ROS 2
-환경을 source합니다.
 
 ```bash
 docker exec -it ugv_project bash -lc \
   'source /opt/ros/foxy/setup.bash && source /project/install/setup.bash && exec bash'
 ```
 
-PCDet 실행에는 CUDA를 지원하는 PyTorch와 OpenPCDet 의존성이 필요합니다. 일부 launch는 저장소 밖의 드라이버를 호출하므로 기능별로 다음 패키지가 추가로 필요합니다.
+<details>
+<summary>추가 runtime 의존성</summary>
 
-- Livox: 사용하는 장비에 맞는 Livox ROS 2 driver
-- NTRIP 사용 시: `ntrip_client`, `rtcm_msgs`
+- Livox 실시간 입력: 장비에 맞는 Livox ROS 2 driver
+- NTRIP 사용: `ntrip_client`, `rtcm_msgs`
 - PCDet launch: `nav2_common`
+- PCDet 추론: CUDA 지원 PyTorch와 OpenPCDet 의존성
 
-빌드 후 등록된 실행 파일은 다음 명령으로 확인할 수 있습니다.
+</details>
 
-```bash
-ros2 pkg executables pcdet_ros2
-ros2 pkg executables rtk_livox_dataset_tools
-```
+## 2. ROS 2 검출·추적
 
-## ROS 2 실행
+### PCDet 실행
 
-### Launch 파일 목록
+기본 설정은 다음과 같습니다.
 
-| 패키지 | Launch | 기능 |
-| --- | --- | --- |
-| `pcdet_ros2` | `pcdet.launch.py` | PCDet 검출·추적 노드 실행 |
-| `pcdet_ros2` | `kitti_bin_publisher.launch.py` | KITTI `.bin` 시퀀스를 `PointCloud2`로 재생 |
-| `rtk_livox_dataset_tools` | `accumulated_bag_exporter.launch.py` | 결합 rosbag을 누적 OpenPCDet 데이터셋으로 추출 |
-| `rtk_livox_dataset_tools` | `rviz_gt_check.launch.py` | RTK 위치·속도를 LiDAR 좌표계 marker로 변환하고 RViz 실행 |
-
-각 launch의 인자는 다음 명령으로 확인할 수 있습니다.
-
-```bash
-ros2 launch <PACKAGE> <LAUNCH_FILE> --show-args
-```
-
-### PCDet ROS 2 검출·추적
-
-기본 launch는 `/livox/lidar`의 `sensor_msgs/PointCloud2`를 받아 CenterPoint
-설정과 `checkpoint_epoch_80.pth`를 사용합니다. 결과는 `/lr_detections`에
-`visualization_msgs/MarkerArray` 형식으로 발행합니다.
+| 항목 | 기본값 |
+| --- | --- |
+| 입력 | `/livox/lidar` (`sensor_msgs/PointCloud2`) |
+| 모델 | CenterPoint + `checkpoint_epoch_80.pth` |
+| 출력 | `/lr_detections` (`visualization_msgs/MarkerArray`) |
 
 ```bash
 ros2 launch pcdet_ros2 pcdet.launch.py
 ```
 
-입출력 토픽이나 출력 메시지 형식을 바꿀 수 있습니다.
+입출력 토픽이나 메시지 형식을 변경할 수 있습니다.
 
 ```bash
 ros2 launch pcdet_ros2 pcdet.launch.py \
@@ -130,36 +104,28 @@ ros2 launch pcdet_ros2 pcdet.launch.py \
   output_format:=detection3d_array
 ```
 
-`output_format`은 `marker_array` 또는 `detection3d_array`입니다. 다른 모델은 파라미터 파일을 지정하여 실행합니다.
+`output_format`은 `marker_array` 또는 `detection3d_array`입니다. SECOND 모델을
+사용하려면 파라미터 파일을 변경합니다.
 
 ```bash
 ros2 launch pcdet_ros2 pcdet.launch.py \
   params_file:="$(ros2 pkg prefix pcdet_ros2)/share/pcdet_ros2/config/pcdet_second.param.yaml"
 ```
 
-모델과 가중치 조합은 `config/*.param.yaml`에서 선택합니다. 경로는 설치된 `pcdet_ros2` 패키지 디렉터리를 기준으로 해석됩니다.
+### KITTI `.bin` 시퀀스로 확인
 
-#### KITTI `.bin` publisher
-
-`kitti_bin_publisher.launch.py`는 KITTI Velodyne 형식의 `.bin` 파일을 파일명 순서대로 읽어 `sensor_msgs/PointCloud2`로 발행합니다. 각 point는 `float32` 형식의 `x`, `y`, `z`, `intensity` 네 필드로 구성되어야 합니다.
-
-저장소의 기본 샘플(`kitti_samples/velodyne`)을 10 Hz로 반복 재생하려면 다음 명령을 실행합니다.
+각 point는 `float32 [x, y, z, intensity]` 형식이어야 합니다. 두 터미널에서
+publisher와 PCDet을 각각 실행합니다.
 
 ```bash
-ros2 launch pcdet_ros2 kitti_bin_publisher.launch.py
-```
-
-기본 출력 토픽은 PCDet 입력과 같은 `/livox/lidar`이므로, 두 터미널에서 publisher와 PCDet launch를 각각 실행하면 KITTI 시퀀스로 검출·추적을 확인할 수 있습니다.
-
-```bash
-# 터미널 1: KITTI point cloud 재생
+# 터미널 1
 ros2 launch pcdet_ros2 kitti_bin_publisher.launch.py
 
-# 터미널 2: PCDet 검출·추적
+# 터미널 2
 ros2 launch pcdet_ros2 pcdet.launch.py
 ```
 
-다른 KITTI 데이터셋을 사용할 때는 KITTI root 또는 `.bin` 파일이 들어 있는 `velodyne` 디렉터리를 `dataset_path`에 지정합니다.
+다른 데이터셋을 사용할 때는 KITTI root 또는 `velodyne` 디렉터리를 지정합니다.
 
 ```bash
 ros2 launch pcdet_ros2 kitti_bin_publisher.launch.py \
@@ -170,126 +136,155 @@ ros2 launch pcdet_ros2 kitti_bin_publisher.launch.py \
   loop:=true
 ```
 
-| 인자 | 기본값 | 설명 |
+<details>
+<summary>KITTI publisher 옵션</summary>
+
+| Alias | 기본값 | 설명 |
 | --- | --- | --- |
-| `dataset_path` | 빈 문자열 | KITTI root 또는 `velodyne` 디렉터리. 비어 있으면 `pcdet_ros2/kitti_samples` symlink를 탐색 |
+| `dataset_path` | 빈 문자열 | KITTI root 또는 `velodyne` 경로. 비어 있으면 기본 sample 탐색 |
 | `input_topic` | `/livox/lidar` | `PointCloud2` 출력 토픽 |
-| `frame_id` | `velodyne` | 출력 message의 frame ID |
-| `publish_rate_hz` | `10.0` | point cloud 발행 주기(Hz, 0보다 커야 함) |
-| `loop` | `true` | 마지막 파일 발행 후 첫 파일부터 다시 재생할지 여부 |
+| `frame_id` | `velodyne` | 출력 frame ID |
+| `publish_rate_hz` | `10.0` | 발행 주기(Hz) |
+| `loop` | `true` | 마지막 파일 이후 처음부터 다시 재생 |
 
-한 번만 재생하려면 `loop:=false`를 사용합니다. 인자를 생략했는데 기본 샘플을 찾지 못하면 `dataset_path`를 절대 경로로 지정하십시오.
+</details>
 
-### Livox/RTK 데이터셋 후처리
+## 3. Livox/RTK rosbag 처리
 
-이 패키지는 이미 기록된 Livox/RTK rosbag을 OpenPCDet 데이터셋으로
-변환하고, RTK GT를 LiDAR 좌표계에서 시각적으로 검수합니다.
+### 3.1 RTK–Livox GT 재생·검수
 
-#### Sparse Livox 누적 데이터셋 추출
+`rviz_gt_check.launch.py`는 **rosbag 재생기이자 GT 시각 검수 도구**입니다.
+calibration을 계산하거나 데이터셋을 만들지는 않습니다.
 
-필요한 입력은 다음 두 가지입니다.
+| 구분 | 내용 |
+| --- | --- |
+| 입력 | Livox/RTK rosbag, calibration YAML |
+| 처리 | rosbag 재생, RTK 위치·속도의 LiDAR 좌표계 변환, RViz 실행 |
+| 출력 | `/rtk_gt/livox/point`, `/rtk_gt/livox/velocity`, `/rtk_gt/livox/markers` |
+| 확인 | LiDAR point cloud와 RTK marker의 위치·방향·시간 정렬 |
 
-- `/livox/lidar`, RTK fix와 velocity가 함께 기록된 rosbag
-- `origin_llh`, `yaw_enu_lidar_rad`, `lidar_position_enu`가 포함된 calibration YAML
+Visualizer와 RViz가 준비되도록 기본 1초 후 rosbag 재생을 시작합니다.
 
-출력 디렉터리가 이미 존재하면 덮어쓰지 않고 종료합니다. 실행할 때마다 새로운
-`output_dir`을 지정하십시오.
+```bash
+ros2 launch rtk_livox_dataset_tools rviz_gt_check.launch.py \
+  bag:=/project/bags/run_01_livox_rtk \
+  calib:=/project/calibration/run_01_lidar_rtk_alignment.yaml \
+  loop:=true
+```
+
+GT 정렬을 확인한 뒤 같은 rosbag과 calibration을 exporter에 전달합니다.
+
+<details>
+<summary>rviz_gt_check 옵션과 alias</summary>
+
+| Launch alias | 대응 실행 옵션 | 기본값 | 설명 |
+| --- | --- | --- | --- |
+| `bag` | `ros2 bag play <PATH>` | `/project/bags/run_01_livox_rtk` | 재생할 rosbag |
+| `loop` | `ros2 bag play --loop` | `true` | 반복 재생 여부 |
+| `play_delay_sec` | Launch 전용 | `1.0` | rosbag 재생 전 대기 시간(초) |
+| `calib` | `--calib` | `/project/calibration/run_01_lidar_rtk_alignment.yaml` | RTK–LiDAR calibration YAML |
+| `time_offset_sec` | `--time-offset-sec` | `0.0` | 출력 RTK timestamp에 더할 값(초) |
+| `fix_topic` | `--fix-topic` | `/ublox_gps_node/fix` | rosbag의 `NavSatFix` 토픽 |
+| `fix_velocity_topic` | `--fix-velocity-topic` | `/ublox_gps_node/fix_velocity` | rosbag의 RTK velocity 토픽 |
+| `livox_frame` | `--livox-frame` | `livox_frame` | 출력 및 RViz fixed frame |
+| `marker_lifetime_sec` | `--marker-lifetime-sec` | `2.0` | marker 유지 시간(초) |
+| `show_speed_text` | `--show-speed-text` | `true` | 속력 text 표시 여부 |
+| `start_rviz` | Launch 전용 | `true` | RViz 자동 실행 여부 |
+
+</details>
+
+### 3.2 Accumulated 데이터셋 파싱
+
+`accumulated_bag_exporter.launch.py`는 **rosbag과 calibration 기반의 오프라인
+dataset parser**입니다. ROS 토픽으로 재생하지 않고 bag 파일을 직접 읽습니다.
+
+| 구분 | 내용 |
+| --- | --- |
+| 입력 | 검수한 Livox/RTK rosbag, calibration YAML |
+| LiDAR 처리 | sparse packet을 causal time window로 누적 |
+| RTK 처리 | 각 프레임 시각 이전의 최신 fix/velocity 선택 및 LiDAR 좌표계 변환 |
+| 출력 | OpenPCDet `.bin`, 프레임/RTK CSV, metadata YAML |
+
+Calibration YAML에는 `origin_llh`, `yaw_enu_lidar_rad`,
+`lidar_position_enu`가 있어야 합니다. 출력 디렉터리는 덮어쓰지 않으므로 매번
+새로운 경로를 지정합니다.
 
 ```bash
 ros2 launch rtk_livox_dataset_tools accumulated_bag_exporter.launch.py \
   bag:=/project/bags/run_01_livox_rtk \
-  output_dir:=/project/datasets/run_02_accumulated \
   calib:=/project/calibration/run_01_lidar_rtk_alignment.yaml \
+  output_dir:=/project/datasets/run_02_accumulated \
   accumulation_sec:=0.2 \
   output_rate_hz:=10.0 \
   max_rtk_age_sec:=0.5
 ```
 
-##### 옵션과 alias
+#### 파싱 정책
 
-| Launch alias | 대응 CLI 옵션 | Launch 기본값 | 설명 |
+- Livox는 `(t - accumulation_sec, t]` 범위의 과거 packet만 누적합니다.
+- RTK는 미래 값이나 보간 값이 아닌 프레임 이전의 최신 값을 사용합니다.
+- `aligned_header`는 Livox 상대 header clock을 rosbag epoch에 정렬합니다.
+- 이동식 LiDAR에는 별도의 ego-motion compensation이 필요합니다.
+- Calibration을 생략하면 LiDAR 좌표계 RTK 열이 `nan`이 되어 평가용 GT로
+  사용할 수 없습니다.
+
+#### 출력 구조
+
+```text
+datasets/run_02_accumulated/
+├── velodyne/000000.bin  # 누적 float32 [x, y, z, intensity]
+├── frames.csv           # 프레임 시간과 point 통계
+├── rtk_latest.csv       # 최신 RTK, sample age, LiDAR 좌표계 GT
+├── ImageSets/test.txt   # 프레임 순서
+└── metadata.yaml        # 입력, 파싱 설정과 결과 통계
+```
+
+`fix_age_sec`, `velocity_age_sec`, `rtk_is_fresh`를 사용해 오래된 RTK를
+필터링할 수 있습니다.
+
+<details>
+<summary>accumulated_bag_exporter 옵션과 alias</summary>
+
+| Launch alias | 대응 CLI 옵션 | 기본값 | 설명 |
 | --- | --- | --- | --- |
-| `bag` | `--bag` | `/project/bags/run_01_livox_rtk` | Livox와 RTK가 함께 기록된 rosbag |
-| `output_dir` | `--output-dir` | `/project/datasets/run_01_accumulated` | 생성 데이터셋 경로. 기존 경로는 덮어쓰지 않음 |
-| `calib` | `--calib` | `/project/calibration/run_01_lidar_rtk_alignment.yaml` | RTK를 LiDAR 좌표계로 변환할 YAML. 추적 평가에서는 필수 |
+| `bag` | `--bag` | `/project/bags/run_01_livox_rtk` | 파싱할 rosbag |
+| `calib` | `--calib` | `/project/calibration/run_01_lidar_rtk_alignment.yaml` | RTK–LiDAR calibration. 평가에서는 필수 |
+| `output_dir` | `--output-dir` | `/project/datasets/run_01_accumulated` | 출력 경로. 기존 경로는 덮어쓰지 않음 |
 | `cloud_topic` | `--cloud-topic` | `/livox/lidar` | Livox `PointCloud2` 토픽 |
 | `fix_topic` | `--fix-topic` | `/ublox_gps_node/fix` | RTK `NavSatFix` 토픽 |
 | `velocity_topic` | `--velocity-topic` | `/ublox_gps_node/fix_velocity` | RTK velocity 토픽 |
-| `storage_id` | `--storage-id` | `sqlite3` | rosbag 저장소 backend |
-| `time_source` | `--time-source` | `aligned_header` | Livox header를 bag epoch에 정렬. `bag`은 record timestamp 사용 |
-| `output_rate_hz` | `--output-rate-hz` | `10.0` | 출력 프레임 주기(Hz) |
-| `accumulation_sec` | `--accumulation-sec` | `0.2` | 각 프레임에 합칠 과거 packet 시간창(초) |
+| `storage_id` | `--storage-id` | `sqlite3` | rosbag storage backend |
+| `time_source` | `--time-source` | `aligned_header` | `aligned_header` 또는 `bag` timestamp 사용 |
+| `output_rate_hz` | `--output-rate-hz` | `10.0` | 출력 frame rate(Hz) |
+| `accumulation_sec` | `--accumulation-sec` | `0.2` | 누적 시간창(초) |
 | `max_rtk_age_sec` | `--max-rtk-age-sec` | `0.5` | 최신 RTK로 인정할 최대 age(초) |
-| `drop_stale_rtk` | `--drop-stale-rtk` | `false` | `true`이면 최대 age를 넘은 RTK 프레임 제외 |
-| `voxel_size` | `--voxel-size` | `0.0` | voxel 크기(m). `0.0`이면 downsampling 비활성화 |
-| `max_points_per_frame` | `--max-points-per-frame` | `0` | 프레임당 point 제한. `0`이면 제한 없음 |
+| `drop_stale_rtk` | `--drop-stale-rtk` | `false` | 오래된 RTK frame 제외 여부 |
+| `voxel_size` | `--voxel-size` | `0.0` | voxel 크기(m). `0.0`이면 비활성화 |
+| `max_points_per_frame` | `--max-points-per-frame` | `0` | frame당 point 제한. `0`이면 제한 없음 |
 
-Exporter는 `(t - accumulation_sec, t]` 범위의 과거 Livox packet만 누적하고,
-프레임 시각보다 미래가 아닌 최신 RTK를 결합합니다. `aligned_header`는 Livox의
-상대 header clock을 rosbag epoch에 맞추며, 보간이나 미래 RTK 참조는 하지
-않습니다. LiDAR가 움직이는 데이터에는 별도의 ego-motion compensation이
-필요합니다.
+</details>
 
-출력 구조는 다음과 같습니다.
+### 3.3 OpenPCDet 검출·추적
 
-```text
-datasets/run_01_accumulated/
-├── velodyne/000000.bin  # float32 [x, y, z, intensity]
-├── frames.csv           # 누적 구간과 point 수
-├── rtk_latest.csv       # 최신 RTK, sample age, LiDAR 좌표계 GT
-├── ImageSets/test.txt   # 프레임 순서
-└── metadata.yaml        # 추출 설정과 통계
-```
-
-Calibration을 생략하면 `rtk_latest.csv`의 LiDAR 좌표계 열이 `nan`이므로 추적
-평가용 GT로 사용할 수 없습니다. `fix_age_sec`, `velocity_age_sec`,
-`rtk_is_fresh`로 오래된 RTK를 필터링할 수 있습니다.
-
-생성된 point cloud는 OpenPCDet 추적 입력으로 사용합니다.
+Exporter가 만든 `velodyne` 디렉터리를 `tracking_demo.py`에 전달합니다.
 
 ```bash
 cd /project/OpenPCDet/tools
 python tracking_demo.py \
   --cfg_file cfgs/kitti_models/centerpoint_aug.yaml \
   --ckpt checkpoints/checkpoint_epoch_80.pth \
-  --data_path ../../datasets/run_01_accumulated/velodyne \
+  --data_path ../../datasets/run_02_accumulated/velodyne \
   --frame_rate 10 \
-  --mode infer
+  --mode infer \
+  --output_dir ../../tracking_results/run_02
 ```
 
-#### RTK–Livox GT 시각 검수
+RTK는 안테나의 점 궤적입니다. 정식 tracking metric에는 안테나–객체 중심
+offset, 평가 class와 3D box 크기가 추가로 필요합니다.
 
-첫 번째 터미널에서 visualizer와 RViz를 실행하고, 두 번째 터미널에서 rosbag을
-재생합니다.
+## 4. OpenPCDet 도구
 
-```bash
-# 터미널 1
-ros2 launch rtk_livox_dataset_tools rviz_gt_check.launch.py
-
-# 터미널 2
-ros2 bag play /project/bags/run_01_livox_rtk --loop
-```
-
-##### 옵션과 alias
-
-| Launch alias | 대응 CLI 옵션 | Launch 기본값 | 설명 |
-| --- | --- | --- | --- |
-| `calib` | `--calib` | `calibration/run_01_lidar_rtk_alignment.yaml` | RTK를 LiDAR 좌표계로 변환할 calibration YAML |
-| `time_offset_sec` | `--time-offset-sec` | `0.0` | RTK timestamp에 적용할 시간 보정값(초) |
-| `fix_topic` | `--fix-topic` | `/ublox_gps_node/fix` | 입력 `NavSatFix` 토픽 |
-| `fix_velocity_topic` | `--fix-velocity-topic` | `/ublox_gps_node/fix_velocity` | 입력 RTK velocity 토픽 |
-| `livox_frame` | `--livox-frame` | `livox_frame` | 출력 메시지와 RViz fixed frame |
-| `marker_lifetime_sec` | `--marker-lifetime-sec` | `2.0` | RViz marker 유지 시간(초) |
-| `show_speed_text` | `--show-speed-text` | `true` | 속력 text marker 표시 여부 |
-| `start_rviz` | - | `true` | visualizer와 함께 RViz를 실행할지 여부 |
-
-출력 토픽은 `/rtk_gt/livox/point`, `/rtk_gt/livox/velocity`,
-`/rtk_gt/livox/markers`입니다. RTK는 안테나의 점 궤적이므로 정식 tracking
-metric에는 안테나–객체 중심 offset, 평가 class와 box 크기가 추가로 필요합니다.
-
-## OpenPCDet 원본 도구
-
-ROS 2를 거치지 않고 OpenPCDet의 원본 학습·평가·데모도 실행할 수 있습니다. 구체적인 모델 인자는 `OpenPCDet/README.md`를 참고하십시오.
+### 학습·평가·단일 프레임 데모
 
 ```bash
 python3 OpenPCDet/tools/train.py --cfg_file <MODEL_YAML>
@@ -299,80 +294,71 @@ python3 OpenPCDet/tools/demo.py \
   --cfg_file <MODEL_YAML> --ckpt <CHECKPOINT> --data_path <POINT_CLOUD>
 ```
 
-### `tracking_demo.py` 검출·추적
+### `tracking_demo.py` 모드
 
-`tracking_demo.py`는 파일명 순서대로 point cloud를 검출하고, `pcdet_ros2`의 3D ByteTracker로 추적합니다. 실행 모드에 따라 Open3D 시각화, 프레임별 TXT 저장 또는 두 기능을 함께 사용할 수 있습니다.
+| 모드 | Open3D 시각화 | 프레임별 TXT 저장 |
+| --- | --- | --- |
+| `demo` | 사용 | 사용 안 함 |
+| `infer` | 사용 안 함 | 사용 |
+| `both` | 사용 | 사용 |
 
-#### 옵션과 alias
-
-| 짧은 alias | 긴 옵션 | 기본값 | 설명 |
-| --- | --- | --- | --- |
-| `-h` | `--help` | - | 도움말 출력 |
-| - | `--cfg_file` | `cfgs/kitti_models/second.yaml` | OpenPCDet 모델 설정 YAML |
-| - | `--data_path` | 필수 | 단일 `.bin`/`.npy` 또는 연속 프레임 디렉터리 |
-| - | `--ckpt` | 필수 | 모델 checkpoint |
-| `-m` | `--mode` | `demo` | `demo`, `infer`, `both` 중 실행 모드 선택 |
-| `-o` | `--output_dir` | `tracking_results` | `infer`/`both` 모드의 프레임별 TXT 출력 폴더 |
-| - | `--output_path` | `tracking_results` | `--output_dir`과 동일한 호환 alias이며 파일이 아닌 폴더를 지정 |
-| - | `--ext` | `.bin` | 입력 확장자: `.bin` 또는 `.npy` |
-| - | `--track_classes` | `2` | 추적할 1-based class ID 목록. KITTI는 `1=Car`, `2=Pedestrian`, `3=Cyclist` |
-| - | `--frame_rate` | `30` | ByteTracker에 전달할 입력 frame rate |
-| - | `--velocity_scale` | `1.0` | Open3D 속도 화살표 길이에 적용하는 시간 배율 |
-| - | `--no_visualization` | 비활성 | `demo`/`both` 모드에서도 Open3D 창을 열지 않음 |
-
-`--data_path`에 디렉터리를 지정하면 파일명을 정렬한 순서로 처리합니다. 시간축 추적을 확인하려면 단일 파일이 아닌 연속 point cloud 디렉터리를 사용해야 합니다.
-
-#### 시각화 모드
-
-박스는 track ID별 고정 색상으로 표시되며, 박스 위 라벨에는 ID, 위치, 속도 벡터와 속력이 표시됩니다. 속도가 계산된 트랙에는 이동 방향 화살표도 표시됩니다. 시각화 창을 닫으면 다음 프레임으로 넘어갑니다.
-
-```bash
-python tracking_demo.py \
-  --cfg_file cfgs/kitti_models/centerpoint_aug.yaml \
-  --ckpt checkpoints/checkpoint_epoch_80.pth \
-  --data_path ../../kitti_samples/velodyne \
-  --track_classes 2 \
-  --velocity_scale 2.0 \
-  -m demo
-```
-
-#### 프레임별 TXT 저장 모드
-
-입력 파일마다 `<POINT_CLOUD_STEM>.txt`가 지정한 폴더에 생성됩니다. 예를 들어 `000000.bin`과 `000001.bin`은 각각 `000000.txt`와 `000001.txt`로 저장됩니다.
-
-```bash
-python tracking_demo.py \
-  --cfg_file cfgs/kitti_models/second_KN.yaml \
-  --ckpt checkpoints/second_KN.pth \
-  --data_path ../../kitti_samples/velodyne \
-  --track_classes 1 2 3 \
-  -m infer \
-  -o ../../tracking_results
-```
-
-TXT의 각 track 행은 탭으로 구분되며 다음 열을 가집니다.
+입력 디렉터리의 `.bin`/`.npy`를 파일명 순서로 처리합니다. TXT 한 행의 구조는
+다음과 같습니다.
 
 ```text
 frame frame_file track_id class_id class_name score
 x1 y1 z1 x2 y2 z2 yaw vx vy vz speed detection_index
 ```
 
-시각화와 TXT 저장을 동시에 사용하려면 같은 명령에서 `-m both`를 지정합니다.
+<details>
+<summary>tracking_demo.py 옵션과 alias</summary>
 
-## 테스트
+| 짧은 alias | 긴 옵션 | 기본값 | 설명 |
+| --- | --- | --- | --- |
+| `-h` | `--help` | - | 도움말 출력 |
+| - | `--cfg_file` | `cfgs/kitti_models/second.yaml` | 모델 설정 YAML |
+| - | `--data_path` | 필수 | point cloud 파일 또는 시퀀스 디렉터리 |
+| - | `--ckpt` | 필수 | 모델 checkpoint |
+| `-m` | `--mode` | `demo` | `demo`, `infer`, `both` |
+| `-o` | `--output_dir` | `tracking_results` | TXT 출력 디렉터리 |
+| - | `--output_path` | `tracking_results` | `--output_dir` 호환 alias |
+| - | `--ext` | `.bin` | `.bin` 또는 `.npy` |
+| - | `--track_classes` | `2` | KITTI class ID: `1=Car`, `2=Pedestrian`, `3=Cyclist` |
+| - | `--frame_rate` | `30` | ByteTracker 입력 frame rate |
+| - | `--velocity_scale` | `1.0` | 속도 화살표 시간 배율 |
+| - | `--no_visualization` | 비활성 | Open3D 창 비활성화 |
+
+</details>
+
+## 5. 테스트
 
 ```bash
 colcon test --packages-select rtk_livox_dataset_tools pcdet_ros2
 colcon test-result --verbose
 ```
 
-## 관련 문서
+Launch alias는 다음 명령으로 확인할 수 있습니다.
+
+```bash
+ros2 launch <PACKAGE> <LAUNCH_FILE> --show-args
+```
+
+## 6. 저장소 구성
+
+| 경로 | 역할 |
+| --- | --- |
+| `src/pcdet_ros2` | OpenPCDet ROS 2 노드와 launch |
+| `src/rtk_livox_dataset_tools` | rosbag 재생·검수 및 accumulated parser |
+| `src/ros2_numpy` | ROS 메시지–NumPy 변환 |
+| `src/vision_msgs_rviz_plugins` | `Detection3DArray` RViz plugin |
+| `src/ublox` | u-blox GNSS driver와 message |
+| `OpenPCDet` | OpenPCDet 학습·평가·데모 코드 |
+| `cfgs`, `config`, `checkpoints` | 모델 YAML, ROS parameter, checkpoint |
+
+## 참고 및 주의사항
 
 - [PCDet ROS 2 패키지 설명](src/pcdet_ros2/README.md)
 - [OpenPCDet 설명](OpenPCDet/README.md)
-
-## 주의사항
-
-- `bags/`, 모델 가중치(`*.pth`)와 colcon 산출물은 Git에서 제외됩니다.
-- PCDet 모델 YAML과 checkpoint가 서로 호환되어야 합니다.
-- 현장 운용 전 `/livox/lidar`의 실제 발행 여부와 주기를 확인하십시오.
+- `bags/`, `*.pth`, `build/`, `install/`, `log/`는 Git 관리 대상이 아닙니다.
+- 모델 YAML과 checkpoint는 서로 호환되어야 합니다.
+- 현장 운용 전 `/livox/lidar`의 topic type과 발행 주기를 확인하십시오.
