@@ -191,27 +191,20 @@ ros2 launch pcdet_ros2 kitti_bin_publisher.launch.py \
 
 | Launch | 읽는 입력 | 실행/처리 | 결과 |
 | --- | --- | --- | --- |
-| `accumulated_bag_exporter.launch.py` | Livox와 RTK가 함께 기록된 bag | 과거 Livox packet 누적 및 최신 RTK 결합 | OpenPCDet `.bin`, RTK CSV, metadata |
+| `accumulated_bag_exporter.launch.py` | Livox와 RTK가 함께 기록된 bag, calibration YAML | 과거 Livox packet 누적 및 최신 RTK의 LiDAR 좌표계 변환 | OpenPCDet `.bin`, RTK CSV, metadata |
 | `rviz_gt_check.launch.py` | calibration YAML, `/fix`, `/fix_velocity` | RTK 위치·속도를 LiDAR 좌표계로 변환하고 RViz 실행 | `/rtk_gt/livox/point`, `/rtk_gt/livox/velocity`, `/rtk_gt/livox/markers` |
-
-#### 후처리 실행 도구
-
-`accumulated_bag_exporter`는 전용 launch 파일을 제공하므로 일반적인 데이터셋
-추출은 `ros2 launch`로 실행합니다. launch를 거치지 않고 CLI 옵션을 직접
-지정해야 할 때는 동일한 실행 파일을 `ros2 run`으로 호출할 수 있습니다.
-
-| 실행 파일 | 입력 | 결과 |
-| --- | --- | --- |
-| `accumulated_bag_exporter` | Livox와 RTK가 함께 든 bag | 누적 OpenPCDet `.bin`, 프레임별 최신 RTK CSV, metadata |
 
 #### Sparse Livox 누적 데이터셋 추출
 
-Livox와 RTK가 함께 기록된 bag은 다음 명령으로 OpenPCDet 입력 프레임으로
-변환합니다. 기본 설정은 10 Hz 프레임마다 직전 0.2초의 Livox packet을
-누적하고, 프레임 시각보다 미래가 아닌 가장 최신 RTK fix와 velocity를
-선택합니다. 보간이나 미래 RTK 참조는 하지 않습니다.
+추출에는 Livox와 RTK가 함께 기록된 bag과 RTK를 LiDAR 좌표계로 변환할
+calibration YAML이 필요합니다. YAML에는 `origin_llh`,
+`yaw_enu_lidar_rad`, `lidar_position_enu`가 포함되어야 합니다. 기본 설정은
+10 Hz 프레임마다 직전 0.2초의 Livox packet을 누적하고, 프레임 시각보다
+미래가 아닌 가장 최신 RTK fix와 velocity를 선택합니다. 보간이나 미래 RTK
+참조는 하지 않습니다.
 
-기본 `bags/run_01_livox_rtk`를 추출하려면 다음 launch를 사용합니다.
+기본 launch는 `/project/bags/run_01_livox_rtk`와
+`/project/calibration/run_01_lidar_rtk_alignment.yaml`을 사용합니다.
 
 ```bash
 ros2 launch rtk_livox_dataset_tools accumulated_bag_exporter.launch.py
@@ -223,6 +216,7 @@ ros2 launch rtk_livox_dataset_tools accumulated_bag_exporter.launch.py
 ros2 launch rtk_livox_dataset_tools accumulated_bag_exporter.launch.py \
   bag:=/project/bags/run_01_livox_rtk \
   output_dir:=/project/datasets/run_01_accumulated \
+  calib:=/project/calibration/run_01_lidar_rtk_alignment.yaml \
   accumulation_sec:=0.2 \
   output_rate_hz:=10.0 \
   max_rtk_age_sec:=0.5
@@ -271,12 +265,13 @@ python tracking_demo.py \
   --mode infer
 ```
 
-`--calib`를 지정하면 `rtk_latest.csv`에 LiDAR 좌표계 위치·속도·진행방향도
-기록합니다. 지정하지 않으면 원본 위경도와 velocity만 기록되고 LiDAR
-좌표계 열은 `nan`입니다. `fix_age_sec`, `velocity_age_sec`, `rtk_is_fresh`는
-평가 전에 RTK freshness를 필터링하는 데 사용합니다. RTK 공백이 있어도
-추적용 LiDAR 프레임은 유지하며 가장 최신 값을 붙입니다. 오래된 RTK가 붙은
-프레임 자체를 제외하려면 `--drop-stale-rtk`를 명시합니다.
+calibration YAML을 지정해야 `rtk_latest.csv`에 LiDAR 좌표계 위치·속도·진행
+방향이 기록됩니다. 이를 생략하면 해당 열이 `nan`이 되므로 이 프로젝트의
+추적 평가용 데이터셋으로 사용할 수 없습니다. `fix_age_sec`,
+`velocity_age_sec`, `rtk_is_fresh`는 평가 전에 RTK freshness를 필터링하는 데
+사용합니다. RTK 공백이 있어도 추적용 LiDAR 프레임은 유지하며 가장 최신 값을
+붙입니다. 오래된 RTK가 붙은 프레임 자체를 제외하려면
+`drop_stale_rtk:=true`를 지정합니다.
 
 `rtk_latest.csv`에는 position/velocity covariance 대각 성분도 함께 기록됩니다.
 현재 RTK 결과는 안테나의 점 궤적이며 완전한 3D bounding-box GT는 아닙니다.
