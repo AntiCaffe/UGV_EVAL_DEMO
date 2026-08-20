@@ -7,7 +7,7 @@ Livox LiDAR 기반 3D 객체 검출·추적과 RTK GNSS ground truth 검수를 �
 - OpenPCDet 기반 3D 객체 검출 및 ByteTrack 추적
 - KITTI `.bin` point cloud 시퀀스의 ROS 2 `PointCloud2` 재생
 - 기존 Livox/RTK rosbag의 누적 데이터셋 변환
-- RTK–LiDAR 좌표계 캘리브레이션 및 GT 시각 검수
+- 기존 RTK–LiDAR calibration 기반 GT 변환 및 시각 검수
 - OpenPCDet 학습, 평가 및 데모 실행
 
 ## 저장소 구성
@@ -181,8 +181,7 @@ ros2 launch pcdet_ros2 kitti_bin_publisher.launch.py \
 
 이 패키지는 Livox/RTK 수집 launch나 상태 monitor를 제공하지 않습니다.
 이미 기록된 bag을 누적 데이터셋으로 변환하고, RTK 데이터를 LiDAR
-좌표계로 변환·검수하는 후처리 도구를 제공합니다. C099 UDP bridge는 필요할
-때 독립 실행할 수 있습니다.
+좌표계로 변환·검수하는 후처리 도구를 제공합니다.
 
 ```text
 기존 Livox/RTK bag + calibration YAML ── 후처리·시각화 도구
@@ -200,12 +199,7 @@ ros2 launch pcdet_ros2 kitti_bin_publisher.launch.py \
 
 | 실행 파일 | 입력 | 결과 |
 | --- | --- | --- |
-| `online_lidar_pose_calibrator` | 실시간 `/ublox_gps_node/navpvt`, 안테나 offset YAML | calibration YAML, `/rtk_livox_calibration/phase` |
-| `lidar_pose_calibrator` | RTK bag, 전진/후진/정지 시간 구간, 안테나 offset YAML | calibration YAML |
-| `gt_transformer` | RTK bag의 NavPVT, calibration YAML | LiDAR 좌표계 RTK GT CSV와 metadata YAML |
-| `opencl_dataset_exporter` | Livox bag의 PointCloud2, RTK GT CSV | `points.bin`, `frames.bin`, `rtk_gt.bin`, `metadata.yaml` |
 | `accumulated_bag_exporter` | Livox와 RTK가 함께 든 bag | 누적 OpenPCDet `.bin`, 프레임별 최신 RTK CSV, metadata |
-| `opencl_dataset_visualizer` | exporter가 만든 binary dataset | Point cloud와 보간된 RTK GT를 보여주는 GUI |
 
 #### Sparse Livox 누적 데이터셋 추출
 
@@ -286,13 +280,7 @@ ros2 bag play bags/run_01_livox_rtk --loop
 | 실행 파일 | 기능 |
 | --- | --- |
 | `pcdet_ros2 pcdet` | PCDet 검출 및 ByteTrack 추적 |
-| `rtk_livox_dataset_tools c099_udp_bridge` | C099 UDP NMEA를 RTK ROS 토픽으로 변환하고 RTCM 전달 |
-| `rtk_livox_dataset_tools online_lidar_pose_calibrator` | 실시간 LiDAR–RTK pose 캘리브레이션 |
-| `rtk_livox_dataset_tools lidar_pose_calibrator` | RTK bag 기반 LiDAR–RTK pose 캘리브레이션 |
-| `rtk_livox_dataset_tools gt_transformer` | RTK NavPVT를 LiDAR 좌표계 GT CSV로 변환 |
-| `rtk_livox_dataset_tools opencl_dataset_exporter` | Livox bag과 RTK GT CSV를 binary dataset으로 변환 |
 | `rtk_livox_dataset_tools accumulated_bag_exporter` | 결합 bag을 누적 OpenPCDet 프레임과 최신 RTK GT로 변환 |
-| `rtk_livox_dataset_tools opencl_dataset_visualizer` | 변환된 dataset의 point cloud와 RTK GT 시각화 |
 | `rtk_livox_dataset_tools rtk_livox_visualizer` | 실시간 RTK 위치·속도를 LiDAR frame 토픽으로 변환 |
 
 각 도구의 상세 옵션은 `--help`로 확인합니다.

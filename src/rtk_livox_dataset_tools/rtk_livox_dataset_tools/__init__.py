@@ -1,1 +1,1 @@
-"""Tools for RTK/Livox calibration and bag postprocessing."""
+"""Tools for RTK/Livox bag postprocessing and visualization."""
