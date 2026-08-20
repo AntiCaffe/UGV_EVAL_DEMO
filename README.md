@@ -191,6 +191,7 @@ ros2 launch pcdet_ros2 kitti_bin_publisher.launch.py \
 
 | Launch | 읽는 입력 | 실행/처리 | 결과 |
 | --- | --- | --- | --- |
+| `accumulated_bag_exporter.launch.py` | Livox와 RTK가 함께 기록된 bag | 과거 Livox packet 누적 및 최신 RTK 결합 | OpenPCDet `.bin`, RTK CSV, metadata |
 | `rviz_gt_check.launch.py` | calibration YAML, `/fix`, `/fix_velocity` | RTK 위치·속도를 LiDAR 좌표계로 변환하고 RViz 실행 | `/rtk_gt/livox/point`, `/rtk_gt/livox/velocity`, `/rtk_gt/livox/markers` |
 
 #### 후처리 실행 도구
@@ -207,6 +208,25 @@ Livox와 RTK가 함께 기록된 bag은 다음 명령으로 OpenPCDet 입력 프
 변환합니다. 기본 설정은 10 Hz 프레임마다 직전 0.2초의 Livox packet을
 누적하고, 프레임 시각보다 미래가 아닌 가장 최신 RTK fix와 velocity를
 선택합니다. 보간이나 미래 RTK 참조는 하지 않습니다.
+
+기본 `bags/run_01_livox_rtk`를 추출하려면 다음 launch를 사용합니다.
+
+```bash
+ros2 launch rtk_livox_dataset_tools accumulated_bag_exporter.launch.py
+```
+
+입출력이나 누적 설정은 launch 인자로 변경할 수 있습니다.
+
+```bash
+ros2 launch rtk_livox_dataset_tools accumulated_bag_exporter.launch.py \
+  bag:=/project/bags/run_01_livox_rtk \
+  output_dir:=/project/datasets/run_01_accumulated \
+  accumulation_sec:=0.2 \
+  output_rate_hz:=10.0 \
+  max_rtk_age_sec:=0.5
+```
+
+동일한 작업을 CLI로 직접 실행하려면 다음 명령을 사용합니다.
 
 ```bash
 ros2 run rtk_livox_dataset_tools accumulated_bag_exporter \
