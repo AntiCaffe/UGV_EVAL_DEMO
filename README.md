@@ -12,6 +12,7 @@ ROS 2 Foxy 워크스페이스입니다.
 | RTK–Livox GT 검수 | `rviz_gt_check.launch.py` | Livox/RTK rosbag + calibration | rosbag 재생 + RViz GT marker |
 | 누적 데이터셋 파싱 | `accumulated_bag_exporter.launch.py` | 검수한 rosbag + calibration | 누적 `.bin` + RTK CSV |
 | 오프라인 검출·추적 | `tracking_demo.py` | 누적 `.bin` 시퀀스 | ByteTrack 결과 TXT/시각화 |
+| Tracking 평가 | `evaluate.py` | Tracking TXT + `rtk_latest.csv` | 위치·속도 RMSE/MAE |
 
 Livox/RTK 데이터는 아래 순서로 처리합니다.
 
@@ -20,6 +21,7 @@ rosbag + calibration
   → 1. RViz에서 GT 정렬 검수
   → 2. accumulated 데이터셋 파싱
   → 3. OpenPCDet 검출·ByteTrack 추적
+  → 4. RTK GT 기반 위치·속도 평가
 ```
 
 ## 1. 빠른 시작
@@ -264,51 +266,41 @@ datasets/run_02_accumulated/
 
 </details>
 
-### 3.3 OpenPCDet 검출·추적
+### 3.3 Tracking infer
 
 Exporter가 만든 `velodyne` 디렉터리를 `tracking_demo.py`에 전달합니다.
+입력 `.bin`/`.npy` 파일은 파일명 순서로 검출하고 ByteTrack으로 추적합니다.
 
 ```bash
 cd /project/OpenPCDet/tools
 python tracking_demo.py \
-  --cfg_file cfgs/kitti_models/centerpoint_aug.yaml \
-  --ckpt checkpoints/checkpoint_epoch_80.pth \
+  --cfg_file cfgs/kitti_models/second_KN.yaml \
+  --ckpt checkpoints/second_KN.pth \
   --data_path ../../datasets/run_02_accumulated/velodyne \
+  --track_classes 1 2 3 \
   --frame_rate 10 \
-  --mode infer \
-  --output_dir ../../tracking_results/run_02
+  -m infer \
+  -o ../../tracking_results/run_02
 ```
 
-RTK는 안테나의 점 궤적입니다. 정식 tracking metric에는 안테나–객체 중심
-offset, 평가 class와 3D box 크기가 추가로 필요합니다.
+입력 파일마다 `<POINT_CLOUD_STEM>.txt`가 출력 디렉터리에 생성됩니다. 예를
+들어 `000000.bin`과 `000001.bin`은 각각 `000000.txt`와 `000001.txt`로
+저장됩니다.
 
-## 4. OpenPCDet 도구
+각 track 행은 탭으로 구분되며 다음 열을 가집니다.
 
-### 학습·평가·단일 프레임 데모
-
-```bash
-python3 OpenPCDet/tools/train.py --cfg_file <MODEL_YAML>
-python3 OpenPCDet/tools/test.py \
-  --cfg_file <MODEL_YAML> --ckpt <CHECKPOINT>
-python3 OpenPCDet/tools/demo.py \
-  --cfg_file <MODEL_YAML> --ckpt <CHECKPOINT> --data_path <POINT_CLOUD>
+```text
+frame frame_file track_id class_id class_name score
+x1 y1 z1 x2 y2 z2 yaw vx vy vz speed detection_index
 ```
 
-### `tracking_demo.py` 모드
+#### 실행 모드
 
 | 모드 | Open3D 시각화 | 프레임별 TXT 저장 |
 | --- | --- | --- |
 | `demo` | 사용 | 사용 안 함 |
 | `infer` | 사용 안 함 | 사용 |
 | `both` | 사용 | 사용 |
-
-입력 디렉터리의 `.bin`/`.npy`를 파일명 순서로 처리합니다. TXT 한 행의 구조는
-다음과 같습니다.
-
-```text
-frame frame_file track_id class_id class_name score
-x1 y1 z1 x2 y2 z2 yaw vx vy vz speed detection_index
-```
 
 <details>
 <summary>tracking_demo.py 옵션과 alias</summary>
@@ -330,20 +322,88 @@ x1 y1 z1 x2 y2 z2 yaw vx vy vz speed detection_index
 
 </details>
 
-## 5. 테스트
+RTK는 안테나의 점 궤적입니다. 정식 tracking metric에는 안테나–객체 중심
+offset, 평가 class와 3D box 크기가 추가로 필요합니다.
+
+### 3.4 Tracking 결과 평가
+
+`evaluate.py`는 tracking TXT와 exporter의 `rtk_latest.csv`를 frame ID로
+정렬해 단일 target track을 선택하고 결과를 저장합니다. RMSE/MAE 계산은
+재사용 가능한 [track_metrics.py](OpenPCDet/tools/track_metrics.py)의 독립
+RMSE/MAE 함수로 분리되어 있으며 ROS 2를 사용하지 않습니다.
 
 ```bash
-colcon test --packages-select rtk_livox_dataset_tools pcdet_ros2
-colcon test-result --verbose
+cd /project/OpenPCDet/tools
+python evaluate.py \
+  --tracking-dir ../../tracking_results/run_02 \
+  --rtk-csv ../../datasets/run_02_accumulated/rtk_latest.csv \
+  --output-dir ../../evaluation_results/run_02
 ```
 
-Launch alias는 다음 명령으로 확인할 수 있습니다.
+| 평가값 | 정의 |
+| --- | --- |
+| 위치 RMSE/MAE | Tracking box 중심과 RTK `p_lidar_*` 사이의 2D/3D 거리 오차 |
+| 속도 RMSE/MAE | Tracking `vx/vy/vz`와 RTK `v_lidar_*` 사이의 2D/3D vector 오차 |
+| Speed RMSE/MAE | 두 velocity vector 크기의 scalar 차이 |
+| Coverage | 유효한 RTK frame 중 선택된 track이 존재하는 frame 비율 |
+
+`--track-id`를 생략하면 각 frame에서 RTK에 가장 가까운 track을 찾고, 가장
+자주 선택된 하나의 일관된 track ID를 평가 대상으로 정합니다. 대상 ID를 알고
+있다면 자동 선택보다 `--track-id <ID>`를 지정하는 것이 권장됩니다.
 
 ```bash
-ros2 launch <PACKAGE> <LAUNCH_FILE> --show-args
+python evaluate.py \
+  --tracking-dir ../../tracking_results/run_02 \
+  --rtk-csv ../../datasets/run_02_accumulated/rtk_latest.csv \
+  --output-dir ../../evaluation_results/run_02 \
+  --track-id 7 \
+  --class-id 2
 ```
 
-## 6. 저장소 구성
+기본적으로 `rtk_is_fresh=1`인 frame만 평가합니다. 오차는 track과 RTK가 모두
+존재하는 frame에서 계산되므로 RMSE/MAE와 함께 coverage 및 누락 frame 수를
+확인해야 합니다.
+
+평가 결과는 다음 두 파일로 저장됩니다.
+
+```text
+evaluation_results/run_02/
+├── summary.json      # 선택 track, coverage, RMSE/MAE 요약
+└── frame_errors.csv  # frame별 예측·GT와 위치·속도 오차
+```
+
+<details>
+<summary>evaluate.py 옵션</summary>
+
+| 옵션 | 기본값 | 설명 |
+| --- | --- | --- |
+| `--tracking-dir` | 필수 | frame별 tracking TXT 디렉터리 |
+| `--rtk-csv` | 필수 | exporter가 생성한 `rtk_latest.csv` |
+| `--output-dir` | `evaluation_results` | 평가 결과 디렉터리 |
+| `--track-id` | 자동 선택 | 평가할 고정 track ID |
+| `--class-id` | 전체 class | association과 평가에 사용할 class ID |
+| `--min-score` | `0.0` | 평가에 포함할 최소 tracking score |
+| `--association-gate-m` | `5.0` | 자동 track 선택에 사용할 최대 거리(m) |
+| `--association-dimension` | `2d` | 자동 association 거리: `2d` 또는 `3d` |
+| `--include-stale-rtk` | 비활성 | `rtk_is_fresh!=1`인 RTK도 포함 |
+| `--antenna-offset-lidar X Y Z` | `0 0 0` | RTK 위치에서 뺄 LiDAR-frame 안테나–target offset |
+
+</details>
+
+## 4. OpenPCDet 학습·평가 도구
+
+아래 도구는 accumulated 파싱·tracking infer 흐름과 별개인 OpenPCDet 원본
+학습, 평가 및 단일 프레임 데모입니다.
+
+```bash
+python3 OpenPCDet/tools/train.py --cfg_file <MODEL_YAML>
+python3 OpenPCDet/tools/test.py \
+  --cfg_file <MODEL_YAML> --ckpt <CHECKPOINT>
+python3 OpenPCDet/tools/demo.py \
+  --cfg_file <MODEL_YAML> --ckpt <CHECKPOINT> --data_path <POINT_CLOUD>
+```
+
+## 5. 저장소 구성
 
 | 경로 | 역할 |
 | --- | --- |
