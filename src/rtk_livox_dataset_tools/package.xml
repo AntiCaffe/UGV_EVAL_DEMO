@@ -2,7 +2,7 @@
 <package format="3">
   <name>rtk_livox_dataset_tools</name>
   <version>0.1.0</version>
-  <description>Field collection and calibration tools for Livox Avia plus RTK GNSS datasets.</description>
+  <description>Calibration and bag postprocessing tools for Livox and RTK datasets.</description>
   <maintainer email="aiv@example.com">AIV</maintainer>
   <license>MIT</license>
 

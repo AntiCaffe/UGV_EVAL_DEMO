@@ -198,16 +198,20 @@ ros2 run rtk_livox_dataset_tools c099_udp_bridge \
   --raw-log rtk_udp_log.bin
 ```
 
-기존 RTK 수집 launch에서 serial `ublox_gps` 대신 C099 UDP를 쓰려면:
+RTK 토픽과 Livox를 함께 bag으로 남겨야 한다면 bridge와 `ros2 bag record`를
+각각 실행합니다. 이 패키지는 별도의 수집 launch를 제공하지 않습니다.
 
 ```bash
 source install/setup.bash
-ros2 launch rtk_livox_dataset_tools rtk_collection.launch.py \
-  start_ublox:=false \
-  start_c099_udp:=true \
-  c099_configure_rate_hz:=10 \
-  start_ntrip:=false \
-  bag_uri:=bags/run_01_rtk_c099
+ros2 run rtk_livox_dataset_tools c099_udp_bridge \
+  --host 192.168.0.1 --port 5555 --configure-rate-hz 10
+
+ros2 bag record -o bags/run_01_livox_rtk \
+  /livox/lidar \
+  /ublox_gps_node/navpvt \
+  /ublox_gps_node/fix \
+  /ublox_gps_node/fix_velocity \
+  /rtcm
 ```
 
 `--configure-rate-hz 10`은 `ublox_gps`의 `rate: 10.0`, `nav_rate: 1`과 같은 의미의 UBX `CFG-RATE` 명령을 UDP로 보냅니다. C099의 UDP 입력이 ZED-F9P로 포워딩되는 설정이면 바로 적용됩니다. 적용되지 않으면 USB/u-center 또는 `ublox_gps` 시리얼 연결로 `rate: 10.0`을 한 번 설정한 뒤 Wi-Fi UDP 수신을 사용하세요.

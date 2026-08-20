@@ -17,13 +17,12 @@ setup(
     zip_safe=True,
     maintainer="AIV",
     maintainer_email="aiv@example.com",
-    description="Field collection and calibration tools for Livox Avia plus RTK GNSS datasets.",
+    description="Calibration and bag postprocessing tools for Livox and RTK datasets.",
     license="MIT",
     tests_require=["pytest"],
     entry_points={
         "console_scripts": [
             "c099_udp_bridge = rtk_livox_dataset_tools.c099_udp_bridge:main",
-            "rtk_status_monitor = rtk_livox_dataset_tools.rtk_status_monitor:main",
             "lidar_pose_calibrator = rtk_livox_dataset_tools.lidar_pose_calibrator:main",
             "online_lidar_pose_calibrator = rtk_livox_dataset_tools.online_lidar_pose_calibrator:main",
             "gt_transformer = rtk_livox_dataset_tools.gt_transformer:main",

@@ -1,1 +1,1 @@
-"""Tools for RTK/Livox dataset collection and calibration."""
+"""Tools for RTK/Livox calibration and bag postprocessing."""

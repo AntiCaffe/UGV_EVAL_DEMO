@@ -6,7 +6,7 @@ Livox LiDAR 기반 3D 객체 검출·추적과 RTK GNSS ground truth 검수를 �
 
 - OpenPCDet 기반 3D 객체 검출 및 ByteTrack 추적
 - KITTI `.bin` point cloud 시퀀스의 ROS 2 `PointCloud2` 재생
-- Livox PointCloud2와 RTK GNSS 토픽의 개별 rosbag 기록
+- 기존 Livox/RTK rosbag의 누적 데이터셋 변환
 - RTK–LiDAR 좌표계 캘리브레이션 및 GT 시각 검수
 - OpenPCDet 학습, 평가 및 데모 실행
 
@@ -15,13 +15,13 @@ Livox LiDAR 기반 3D 객체 검출·추적과 RTK GNSS ground truth 검수를 �
 | 경로 | 역할 |
 | --- | --- |
 | `src/pcdet_ros2` | OpenPCDet ROS 2 노드와 launch 파일 |
-| `src/rtk_livox_dataset_tools` | Livox/RTK 토픽 기록, 좌표변환, 품질 확인 및 시각화 도구 |
+| `src/rtk_livox_dataset_tools` | Livox/RTK bag 후처리, 좌표변환 및 시각화 도구 |
 | `src/ublox` | u-blox GNSS 드라이버와 ROS 메시지 |
 | `src/ros2_numpy` | ROS 메시지와 NumPy 배열 변환 라이브러리 |
 | `src/vision_msgs_rviz_plugins` | `vision_msgs/Detection3DArray` RViz 플러그인 |
 | `OpenPCDet` | 3D 검출 모델 학습·평가 코드 |
 | `cfgs`, `config`, `checkpoints` | PCDet 모델 설정, ROS 파라미터 및 가중치 |
-| `docs` | 현장 수집 절차와 파이프라인 설계 문서 |
+| `docs` | 데이터셋 및 실행 관련 보조 문서 |
 
 ## 실행 환경과 빌드
 
@@ -100,9 +100,6 @@ ros2 pkg executables rtk_livox_dataset_tools
 | --- | --- | --- |
 | `pcdet_ros2` | `pcdet.launch.py` | PCDet 검출·추적 노드 실행 |
 | `pcdet_ros2` | `kitti_bin_publisher.launch.py` | KITTI `.bin` 시퀀스를 `PointCloud2`로 재생 |
-| `rtk_livox_dataset_tools` | `livox_collection.launch.py` | 지정된 기존 토픽을 rosbag으로 기록 |
-| `rtk_livox_dataset_tools` | `rtk_collection.launch.py` | GNSS/NTRIP 실행, RTK 상태 확인 및 rosbag 기록 |
-| `rtk_livox_dataset_tools` | `rtk_status_monitor.launch.py` | RTK 품질 및 RTCM 수신 상태 CSV 기록 |
 | `rtk_livox_dataset_tools` | `rviz_gt_check.launch.py` | RTK 위치·속도를 LiDAR 좌표계 marker로 변환하고 RViz 실행 |
 
 각 launch의 인자는 다음 명령으로 확인할 수 있습니다.
@@ -182,55 +179,20 @@ ros2 launch pcdet_ros2 kitti_bin_publisher.launch.py \
 
 ### `rtk_livox_dataset_tools`
 
-이 패키지는 Livox 드라이버, PCDet 또는 추적 노드를 구현하거나 실행하지 않습니다. 외부 노드가 발행하는 센서 토픽을 기록하고, RTK 데이터를 LiDAR 좌표계로 변환·검수하는 도구입니다.
-
-Livox와 RTK는 별도 bag 또는 하나의 결합 bag으로 기록할 수 있습니다.
+이 패키지는 Livox/RTK 수집 launch나 상태 monitor를 제공하지 않습니다.
+이미 기록된 bag을 누적 데이터셋으로 변환하고, RTK 데이터를 LiDAR
+좌표계로 변환·검수하는 후처리 도구를 제공합니다. C099 UDP bridge는 필요할
+때 독립 실행할 수 있습니다.
 
 ```text
-외부 Livox driver ── /livox/lidar ── livox_collection.launch.py ── Livox bag
-
-u-blox/C099 + NTRIP ── RTK 토픽 ── rtk_collection.launch.py ── RTK bag + 상태 CSV
-
-Livox/RTK bag + calibration YAML ── 후처리·시각화 도구
+기존 Livox/RTK bag + calibration YAML ── 후처리·시각화 도구
 ```
-
-#### Livox PointCloud2 기록
-
-`livox_collection.launch.py`는 지정한 토픽으로 `ros2 bag record`를 실행하는 기록용 wrapper입니다. Livox driver는 별도로 먼저 실행되어 `/livox/lidar`를 발행하고 있어야 합니다.
-
-```bash
-ros2 launch rtk_livox_dataset_tools livox_collection.launch.py \
-  bag_uri:=bags/run_01_livox \
-  record_topics:="/livox/lidar"
-```
-
-위 명령은 사실상 다음 명령과 같습니다.
-
-```bash
-ros2 bag record -o bags/run_01_livox /livox/lidar
-```
-
-`record_topics`에 다른 토픽을 지정하면 함께 기록할 수 있지만, 이 launch가 해당 토픽의 생산 노드를 실행해 주지는 않습니다.
 
 #### Launch 입출력 상세
 
 | Launch | 읽는 입력 | 실행/처리 | 결과 |
 | --- | --- | --- | --- |
-| `livox_collection.launch.py` | `record_topics`에 지정된 기존 ROS 토픽 | `ros2 bag record` | `bag_uri`의 rosbag |
-| `rtk_collection.launch.py` | u-blox serial 또는 C099 UDP, 외부 NTRIP `/rtcm` | GNSS/NTRIP 실행, RTK 토픽 기록, 상태 모니터 | RTK rosbag, 상태 CSV, 선택적 UDP raw log |
-| `rtk_status_monitor.launch.py` | `/ublox_gps_node/navpvt`, `/fix`, `/fix_velocity`, `/rtcm` | RTK fix/RTCM 상태 판정 | `logs/rtk_status_*.csv` |
 | `rviz_gt_check.launch.py` | calibration YAML, `/fix`, `/fix_velocity` | RTK 위치·속도를 LiDAR 좌표계로 변환하고 RViz 실행 | `/rtk_gt/livox/point`, `/rtk_gt/livox/velocity`, `/rtk_gt/livox/markers` |
-
-`rtk_collection.launch.py`의 기본 기록 토픽은 다음과 같습니다.
-
-```text
-/ublox_gps_node/navpvt
-/ublox_gps_node/fix
-/ublox_gps_node/fix_velocity
-/rtcm
-```
-
-C099 UDP bridge를 사용할 경우 `start_ublox:=false`, `start_c099_udp:=true`로 설정해야 동일한 RTK 토픽을 두 노드가 동시에 발행하는 것을 피할 수 있습니다.
 
 #### 후처리 실행 도구
 
@@ -244,8 +206,6 @@ C099 UDP bridge를 사용할 경우 `start_ublox:=false`, `start_c099_udp:=true`
 | `opencl_dataset_exporter` | Livox bag의 PointCloud2, RTK GT CSV | `points.bin`, `frames.bin`, `rtk_gt.bin`, `metadata.yaml` |
 | `accumulated_bag_exporter` | Livox와 RTK가 함께 든 bag | 누적 OpenPCDet `.bin`, 프레임별 최신 RTK CSV, metadata |
 | `opencl_dataset_visualizer` | exporter가 만든 binary dataset | Point cloud와 보간된 RTK GT를 보여주는 GUI |
-
-`config/dataset_collection.yaml`은 설치 대상에는 포함되지만 현재 어떤 launch나 Python 노드에서도 읽지 않습니다. 해당 파일의 토픽, RTK 품질 임계값과 캘리브레이션 항목은 현재 실행 동작에 영향을 주지 않습니다.
 
 #### Sparse Livox 누적 데이터셋 추출
 
@@ -327,7 +287,6 @@ ros2 bag play bags/run_01_livox_rtk --loop
 | --- | --- |
 | `pcdet_ros2 pcdet` | PCDet 검출 및 ByteTrack 추적 |
 | `rtk_livox_dataset_tools c099_udp_bridge` | C099 UDP NMEA를 RTK ROS 토픽으로 변환하고 RTCM 전달 |
-| `rtk_livox_dataset_tools rtk_status_monitor` | RTK 품질 및 RTCM 수신 상태 CSV 기록 |
 | `rtk_livox_dataset_tools online_lidar_pose_calibrator` | 실시간 LiDAR–RTK pose 캘리브레이션 |
 | `rtk_livox_dataset_tools lidar_pose_calibrator` | RTK bag 기반 LiDAR–RTK pose 캘리브레이션 |
 | `rtk_livox_dataset_tools gt_transformer` | RTK NavPVT를 LiDAR 좌표계 GT CSV로 변환 |
