@@ -73,10 +73,12 @@ Livox LiDAR 기반 3D 객체 검출·추적과 RTK GNSS ground truth 검수를 �
 
 ### 실행 중인 컨테이너에 다시 접속
 
-`ugv_project` 컨테이너가 이미 실행 중이라면 새 터미널에서 다음 명령으로 접속합니다.
+`ugv_project` 컨테이너가 이미 실행 중이라면 새 터미널에서 접속한 뒤 ROS 2
+환경을 source합니다.
 
 ```bash
-docker exec -it ugv_project bash
+docker exec -it ugv_project bash -lc \
+  'source /opt/ros/foxy/setup.bash && source /project/install/setup.bash && exec bash'
 ```
 
 PCDet 실행에는 CUDA를 지원하는 PyTorch와 OpenPCDet 의존성이 필요합니다. 일부 launch는 저장소 밖의 드라이버를 호출하므로 기능별로 다음 패키지가 추가로 필요합니다.
@@ -100,6 +102,7 @@ ros2 pkg executables rtk_livox_dataset_tools
 | --- | --- | --- |
 | `pcdet_ros2` | `pcdet.launch.py` | PCDet 검출·추적 노드 실행 |
 | `pcdet_ros2` | `kitti_bin_publisher.launch.py` | KITTI `.bin` 시퀀스를 `PointCloud2`로 재생 |
+| `rtk_livox_dataset_tools` | `accumulated_bag_exporter.launch.py` | 결합 rosbag을 누적 OpenPCDet 데이터셋으로 추출 |
 | `rtk_livox_dataset_tools` | `rviz_gt_check.launch.py` | RTK 위치·속도를 LiDAR 좌표계 marker로 변환하고 RViz 실행 |
 
 각 launch의 인자는 다음 명령으로 확인할 수 있습니다.
@@ -110,10 +113,11 @@ ros2 launch <PACKAGE> <LAUNCH_FILE> --show-args
 
 ### PCDet ROS 2 검출·추적
 
-기본 launch는 `/livox/lidar`의 `sensor_msgs/PointCloud2`를 받아 CenterPoint 설정과 `checkpoint_epoch_100.pth`를 사용합니다. 결과는 기본적으로 `/lr_detections`에 `visualization_msgs/MarkerArray` 형식으로 발행합니다.
+기본 launch는 `/livox/lidar`의 `sensor_msgs/PointCloud2`를 받아 CenterPoint
+설정과 `checkpoint_epoch_80.pth`를 사용합니다. 결과는 `/lr_detections`에
+`visualization_msgs/MarkerArray` 형식으로 발행합니다.
 
 ```bash
-source install/setup.bash
 ros2 launch pcdet_ros2 pcdet.launch.py
 ```
 
@@ -142,7 +146,6 @@ ros2 launch pcdet_ros2 pcdet.launch.py \
 저장소의 기본 샘플(`kitti_samples/velodyne`)을 10 Hz로 반복 재생하려면 다음 명령을 실행합니다.
 
 ```bash
-source install/setup.bash
 ros2 launch pcdet_ros2 kitti_bin_publisher.launch.py
 ```
 
@@ -177,86 +180,75 @@ ros2 launch pcdet_ros2 kitti_bin_publisher.launch.py \
 
 한 번만 재생하려면 `loop:=false`를 사용합니다. 인자를 생략했는데 기본 샘플을 찾지 못하면 `dataset_path`를 절대 경로로 지정하십시오.
 
-### `rtk_livox_dataset_tools`
+### Livox/RTK 데이터셋 후처리
 
-이 패키지는 Livox/RTK 수집 launch나 상태 monitor를 제공하지 않습니다.
-이미 기록된 bag을 누적 데이터셋으로 변환하고, RTK 데이터를 LiDAR
-좌표계로 변환·검수하는 후처리 도구를 제공합니다.
-
-```text
-기존 Livox/RTK bag + calibration YAML ── 후처리·시각화 도구
-```
-
-#### Launch 입출력 상세
-
-| Launch | 읽는 입력 | 실행/처리 | 결과 |
-| --- | --- | --- | --- |
-| `accumulated_bag_exporter.launch.py` | Livox와 RTK가 함께 기록된 bag, calibration YAML | 과거 Livox packet 누적 및 최신 RTK의 LiDAR 좌표계 변환 | OpenPCDet `.bin`, RTK CSV, metadata |
-| `rviz_gt_check.launch.py` | calibration YAML, `/fix`, `/fix_velocity` | RTK 위치·속도를 LiDAR 좌표계로 변환하고 RViz 실행 | `/rtk_gt/livox/point`, `/rtk_gt/livox/velocity`, `/rtk_gt/livox/markers` |
+이 패키지는 이미 기록된 Livox/RTK rosbag을 OpenPCDet 데이터셋으로
+변환하고, RTK GT를 LiDAR 좌표계에서 시각적으로 검수합니다.
 
 #### Sparse Livox 누적 데이터셋 추출
 
-추출에는 Livox와 RTK가 함께 기록된 bag과 RTK를 LiDAR 좌표계로 변환할
-calibration YAML이 필요합니다. YAML에는 `origin_llh`,
-`yaw_enu_lidar_rad`, `lidar_position_enu`가 포함되어야 합니다. 기본 설정은
-10 Hz 프레임마다 직전 0.2초의 Livox packet을 누적하고, 프레임 시각보다
-미래가 아닌 가장 최신 RTK fix와 velocity를 선택합니다. 보간이나 미래 RTK
-참조는 하지 않습니다.
+필요한 입력은 다음 두 가지입니다.
 
-기본 launch는 `/project/bags/run_01_livox_rtk`와
-`/project/calibration/run_01_lidar_rtk_alignment.yaml`을 사용합니다.
+- `/livox/lidar`, RTK fix와 velocity가 함께 기록된 rosbag
+- `origin_llh`, `yaw_enu_lidar_rad`, `lidar_position_enu`가 포함된 calibration YAML
 
-```bash
-ros2 launch rtk_livox_dataset_tools accumulated_bag_exporter.launch.py
-```
-
-입출력이나 누적 설정은 launch 인자로 변경할 수 있습니다.
+출력 디렉터리가 이미 존재하면 덮어쓰지 않고 종료합니다. 실행할 때마다 새로운
+`output_dir`을 지정하십시오.
 
 ```bash
 ros2 launch rtk_livox_dataset_tools accumulated_bag_exporter.launch.py \
   bag:=/project/bags/run_01_livox_rtk \
-  output_dir:=/project/datasets/run_01_accumulated \
+  output_dir:=/project/datasets/run_02_accumulated \
   calib:=/project/calibration/run_01_lidar_rtk_alignment.yaml \
   accumulation_sec:=0.2 \
   output_rate_hz:=10.0 \
   max_rtk_age_sec:=0.5
 ```
 
-동일한 작업을 CLI로 직접 실행하려면 다음 명령을 사용합니다.
+##### 옵션과 alias
 
-```bash
-ros2 run rtk_livox_dataset_tools accumulated_bag_exporter \
-  --bag bags/run_01_livox_rtk \
-  --output-dir datasets/run_01_accumulated \
-  --accumulation-sec 0.2 \
-  --output-rate-hz 10 \
-  --max-rtk-age-sec 0.5 \
-  --calib calibration/run_01_lidar_rtk_alignment.yaml
-```
+| Launch alias | 대응 CLI 옵션 | Launch 기본값 | 설명 |
+| --- | --- | --- | --- |
+| `bag` | `--bag` | `/project/bags/run_01_livox_rtk` | Livox와 RTK가 함께 기록된 rosbag |
+| `output_dir` | `--output-dir` | `/project/datasets/run_01_accumulated` | 생성 데이터셋 경로. 기존 경로는 덮어쓰지 않음 |
+| `calib` | `--calib` | `/project/calibration/run_01_lidar_rtk_alignment.yaml` | RTK를 LiDAR 좌표계로 변환할 YAML. 추적 평가에서는 필수 |
+| `cloud_topic` | `--cloud-topic` | `/livox/lidar` | Livox `PointCloud2` 토픽 |
+| `fix_topic` | `--fix-topic` | `/ublox_gps_node/fix` | RTK `NavSatFix` 토픽 |
+| `velocity_topic` | `--velocity-topic` | `/ublox_gps_node/fix_velocity` | RTK velocity 토픽 |
+| `storage_id` | `--storage-id` | `sqlite3` | rosbag 저장소 backend |
+| `time_source` | `--time-source` | `aligned_header` | Livox header를 bag epoch에 정렬. `bag`은 record timestamp 사용 |
+| `output_rate_hz` | `--output-rate-hz` | `10.0` | 출력 프레임 주기(Hz) |
+| `accumulation_sec` | `--accumulation-sec` | `0.2` | 각 프레임에 합칠 과거 packet 시간창(초) |
+| `max_rtk_age_sec` | `--max-rtk-age-sec` | `0.5` | 최신 RTK로 인정할 최대 age(초) |
+| `drop_stale_rtk` | `--drop-stale-rtk` | `false` | `true`이면 최대 age를 넘은 RTK 프레임 제외 |
+| `voxel_size` | `--voxel-size` | `0.0` | voxel 크기(m). `0.0`이면 downsampling 비활성화 |
+| `max_points_per_frame` | `--max-points-per-frame` | `0` | 프레임당 point 제한. `0`이면 제한 없음 |
 
-생성 구조는 다음과 같습니다.
+Exporter는 `(t - accumulation_sec, t]` 범위의 과거 Livox packet만 누적하고,
+프레임 시각보다 미래가 아닌 최신 RTK를 결합합니다. `aligned_header`는 Livox의
+상대 header clock을 rosbag epoch에 맞추며, 보간이나 미래 RTK 참조는 하지
+않습니다. LiDAR가 움직이는 데이터에는 별도의 ego-motion compensation이
+필요합니다.
+
+출력 구조는 다음과 같습니다.
 
 ```text
 datasets/run_01_accumulated/
-├── velodyne/000000.bin       # float32 [x, y, z, intensity]
-├── frames.csv                # 누적 시간창, packet 수, point 수
-├── rtk_latest.csv            # 각 프레임 시각의 최신 RTK 값과 sample age
-├── ImageSets/test.txt        # 프레임 순서
-└── metadata.yaml             # 추출 정책과 재현 파라미터
+├── velodyne/000000.bin  # float32 [x, y, z, intensity]
+├── frames.csv           # 누적 구간과 point 수
+├── rtk_latest.csv       # 최신 RTK, sample age, LiDAR 좌표계 GT
+├── ImageSets/test.txt   # 프레임 순서
+└── metadata.yaml        # 추출 설정과 통계
 ```
 
-현재 bag의 Livox header는 sensor-relative time이고 RTK header는 epoch
-time입니다. exporter는 `median(bag_time - livox_header_time)`으로 Livox
-clock을 epoch에 정렬하고, 실제 bag write 지연을 측정해 packet을 시간순으로
-재정렬합니다. 필요하면 `--time-source bag`으로 record timestamp만 사용할 수
-있습니다. 누적은 `(t - accumulation_sec, t]`의 과거 packet만 사용하는 causal 방식입니다.
-LiDAR가 고정 설치됐다는 조건에서 좌표 보상 없이 합치므로, LiDAR 자체가
-움직인 데이터에는 ego-motion compensation을 추가해야 합니다.
+Calibration을 생략하면 `rtk_latest.csv`의 LiDAR 좌표계 열이 `nan`이므로 추적
+평가용 GT로 사용할 수 없습니다. `fix_age_sec`, `velocity_age_sec`,
+`rtk_is_fresh`로 오래된 RTK를 필터링할 수 있습니다.
 
-OpenPCDet 추론·추적에는 생성된 `velodyne` 폴더를 전달합니다.
+생성된 point cloud는 OpenPCDet 추적 입력으로 사용합니다.
 
 ```bash
-cd OpenPCDet/tools
+cd /project/OpenPCDet/tools
 python tracking_demo.py \
   --cfg_file cfgs/kitti_models/centerpoint_aug.yaml \
   --ckpt checkpoints/checkpoint_epoch_80.pth \
@@ -265,46 +257,35 @@ python tracking_demo.py \
   --mode infer
 ```
 
-calibration YAML을 지정해야 `rtk_latest.csv`에 LiDAR 좌표계 위치·속도·진행
-방향이 기록됩니다. 이를 생략하면 해당 열이 `nan`이 되므로 이 프로젝트의
-추적 평가용 데이터셋으로 사용할 수 없습니다. `fix_age_sec`,
-`velocity_age_sec`, `rtk_is_fresh`는 평가 전에 RTK freshness를 필터링하는 데
-사용합니다. RTK 공백이 있어도 추적용 LiDAR 프레임은 유지하며 가장 최신 값을
-붙입니다. 오래된 RTK가 붙은 프레임 자체를 제외하려면
-`drop_stale_rtk:=true`를 지정합니다.
-
-`rtk_latest.csv`에는 position/velocity covariance 대각 성분도 함께 기록됩니다.
-현재 RTK 결과는 안테나의 점 궤적이며 완전한 3D bounding-box GT는 아닙니다.
-정식 tracking metric을 계산하기 전에는 RTK 안테나에서 객체 중심까지의 offset,
-평가 대상 class와 box 크기를 별도로 정의해야 합니다.
-
 #### RTK–Livox GT 시각 검수
 
-```bash
-ros2 launch rtk_livox_dataset_tools rviz_gt_check.launch.py \
-  calib:=calibration/run_01_lidar_rtk_alignment.yaml \
-  time_offset_sec:=0.0 \
-  livox_frame:=livox_frame \
-  show_speed_text:=true
-```
+첫 번째 터미널에서 visualizer와 RViz를 실행하고, 두 번째 터미널에서 rosbag을
+재생합니다.
 
 ```bash
-ros2 bag play bags/run_01_livox_rtk --loop
+# 터미널 1
+ros2 launch rtk_livox_dataset_tools rviz_gt_check.launch.py
+
+# 터미널 2
+ros2 bag play /project/bags/run_01_livox_rtk --loop
 ```
 
-### 직접 실행 가능한 ROS 2 노드/도구
+##### 옵션과 alias
 
-| 실행 파일 | 기능 |
-| --- | --- |
-| `pcdet_ros2 pcdet` | PCDet 검출 및 ByteTrack 추적 |
-| `rtk_livox_dataset_tools accumulated_bag_exporter` | 결합 bag을 누적 OpenPCDet 프레임과 최신 RTK GT로 변환 |
-| `rtk_livox_dataset_tools rtk_livox_visualizer` | 실시간 RTK 위치·속도를 LiDAR frame 토픽으로 변환 |
+| Launch alias | 대응 CLI 옵션 | Launch 기본값 | 설명 |
+| --- | --- | --- | --- |
+| `calib` | `--calib` | `calibration/run_01_lidar_rtk_alignment.yaml` | RTK를 LiDAR 좌표계로 변환할 calibration YAML |
+| `time_offset_sec` | `--time-offset-sec` | `0.0` | RTK timestamp에 적용할 시간 보정값(초) |
+| `fix_topic` | `--fix-topic` | `/ublox_gps_node/fix` | 입력 `NavSatFix` 토픽 |
+| `fix_velocity_topic` | `--fix-velocity-topic` | `/ublox_gps_node/fix_velocity` | 입력 RTK velocity 토픽 |
+| `livox_frame` | `--livox-frame` | `livox_frame` | 출력 메시지와 RViz fixed frame |
+| `marker_lifetime_sec` | `--marker-lifetime-sec` | `2.0` | RViz marker 유지 시간(초) |
+| `show_speed_text` | `--show-speed-text` | `true` | 속력 text marker 표시 여부 |
+| `start_rviz` | - | `true` | visualizer와 함께 RViz를 실행할지 여부 |
 
-각 도구의 상세 옵션은 `--help`로 확인합니다.
-
-```bash
-ros2 run rtk_livox_dataset_tools <EXECUTABLE> --help
-```
+출력 토픽은 `/rtk_gt/livox/point`, `/rtk_gt/livox/velocity`,
+`/rtk_gt/livox/markers`입니다. RTK는 안테나의 점 궤적이므로 정식 tracking
+metric에는 안테나–객체 중심 offset, 평가 class와 box 크기가 추가로 필요합니다.
 
 ## OpenPCDet 원본 도구
 
@@ -312,28 +293,10 @@ ROS 2를 거치지 않고 OpenPCDet의 원본 학습·평가·데모도 실행�
 
 ```bash
 python3 OpenPCDet/tools/train.py --cfg_file <MODEL_YAML>
-python3 OpenPCDet/tools/test.py --cfg_file <MODEL_YAML> --ckpt <CHECKPOINT>
-python3 OpenPCDet/tools/demo.py --cfg_file <MODEL_YAML> --ckpt <CHECKPOINT> --data_path <POINT_CLOUD>
-```
-
-### `demo.py` 모델별 실행 예시
-
-다음 명령은 `OpenPCDet/tools` 디렉터리를 기준으로 실행합니다.
-
-```bash
-cd OpenPCDet/tools
-```
-
-CenterPoint:
-
-```bash
-python demo.py --cfg_file cfgs/kitti_models/centerpoint_aug.yaml --ckpt checkpoints/checkpoint_epoch_80.pth --data_path ../../kitti_samples/velodyne/000000.bin
-```
-
-SECOND:
-
-```bash
-python demo.py --cfg_file cfgs/kitti_models/second_KN.yaml --ckpt checkpoints/second_KN.pth --data_path ../../kitti_samples/velodyne/000000.bin
+python3 OpenPCDet/tools/test.py \
+  --cfg_file <MODEL_YAML> --ckpt <CHECKPOINT>
+python3 OpenPCDet/tools/demo.py \
+  --cfg_file <MODEL_YAML> --ckpt <CHECKPOINT> --data_path <POINT_CLOUD>
 ```
 
 ### `tracking_demo.py` 검출·추적
@@ -394,17 +357,7 @@ frame frame_file track_id class_id class_name score
 x1 y1 z1 x2 y2 z2 yaw vx vy vz speed detection_index
 ```
 
-#### 시각화와 TXT 저장 동시 실행
-
-```bash
-python tracking_demo.py \
-  --cfg_file cfgs/kitti_models/second_KN.yaml \
-  --ckpt checkpoints/second_KN.pth \
-  --data_path ../../kitti_samples/velodyne \
-  --track_classes 1 2 3 \
-  -m both \
-  -o ../../tracking_results
-```
+시각화와 TXT 저장을 동시에 사용하려면 같은 명령에서 `-m both`를 지정합니다.
 
 ## 테스트
 
