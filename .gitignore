@@ -2,6 +2,7 @@
 /calibration
 /tracking_results
 /kitti_samples
+/datasets
 
 # ROS 2 / colcon build outputs (matches at every directory level)
 build/

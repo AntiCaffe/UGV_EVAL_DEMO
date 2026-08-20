@@ -184,7 +184,7 @@ ros2 launch pcdet_ros2 kitti_bin_publisher.launch.py \
 
 이 패키지는 Livox 드라이버, PCDet 또는 추적 노드를 구현하거나 실행하지 않습니다. 외부 노드가 발행하는 센서 토픽을 기록하고, RTK 데이터를 LiDAR 좌표계로 변환·검수하는 도구입니다.
 
-현재 Livox와 RTK는 서로 다른 launch가 별도 bag으로 기록합니다.
+Livox와 RTK는 별도 bag 또는 하나의 결합 bag으로 기록할 수 있습니다.
 
 ```text
 외부 Livox driver ── /livox/lidar ── livox_collection.launch.py ── Livox bag
@@ -242,9 +242,70 @@ C099 UDP bridge를 사용할 경우 `start_ublox:=false`, `start_c099_udp:=true`
 | `lidar_pose_calibrator` | RTK bag, 전진/후진/정지 시간 구간, 안테나 offset YAML | calibration YAML |
 | `gt_transformer` | RTK bag의 NavPVT, calibration YAML | LiDAR 좌표계 RTK GT CSV와 metadata YAML |
 | `opencl_dataset_exporter` | Livox bag의 PointCloud2, RTK GT CSV | `points.bin`, `frames.bin`, `rtk_gt.bin`, `metadata.yaml` |
+| `accumulated_bag_exporter` | Livox와 RTK가 함께 든 bag | 누적 OpenPCDet `.bin`, 프레임별 최신 RTK CSV, metadata |
 | `opencl_dataset_visualizer` | exporter가 만든 binary dataset | Point cloud와 보간된 RTK GT를 보여주는 GUI |
 
 `config/dataset_collection.yaml`은 설치 대상에는 포함되지만 현재 어떤 launch나 Python 노드에서도 읽지 않습니다. 해당 파일의 토픽, RTK 품질 임계값과 캘리브레이션 항목은 현재 실행 동작에 영향을 주지 않습니다.
+
+#### Sparse Livox 누적 데이터셋 추출
+
+Livox와 RTK가 함께 기록된 bag은 다음 명령으로 OpenPCDet 입력 프레임으로
+변환합니다. 기본 설정은 10 Hz 프레임마다 직전 0.2초의 Livox packet을
+누적하고, 프레임 시각보다 미래가 아닌 가장 최신 RTK fix와 velocity를
+선택합니다. 보간이나 미래 RTK 참조는 하지 않습니다.
+
+```bash
+ros2 run rtk_livox_dataset_tools accumulated_bag_exporter \
+  --bag bags/run_01_livox_rtk \
+  --output-dir datasets/run_01_accumulated \
+  --accumulation-sec 0.2 \
+  --output-rate-hz 10 \
+  --max-rtk-age-sec 0.5 \
+  --calib calibration/run_01_lidar_rtk_alignment.yaml
+```
+
+생성 구조는 다음과 같습니다.
+
+```text
+datasets/run_01_accumulated/
+├── velodyne/000000.bin       # float32 [x, y, z, intensity]
+├── frames.csv                # 누적 시간창, packet 수, point 수
+├── rtk_latest.csv            # 각 프레임 시각의 최신 RTK 값과 sample age
+├── ImageSets/test.txt        # 프레임 순서
+└── metadata.yaml             # 추출 정책과 재현 파라미터
+```
+
+현재 bag의 Livox header는 sensor-relative time이고 RTK header는 epoch
+time입니다. exporter는 `median(bag_time - livox_header_time)`으로 Livox
+clock을 epoch에 정렬하고, 실제 bag write 지연을 측정해 packet을 시간순으로
+재정렬합니다. 필요하면 `--time-source bag`으로 record timestamp만 사용할 수
+있습니다. 누적은 `(t - accumulation_sec, t]`의 과거 packet만 사용하는 causal 방식입니다.
+LiDAR가 고정 설치됐다는 조건에서 좌표 보상 없이 합치므로, LiDAR 자체가
+움직인 데이터에는 ego-motion compensation을 추가해야 합니다.
+
+OpenPCDet 추론·추적에는 생성된 `velodyne` 폴더를 전달합니다.
+
+```bash
+cd OpenPCDet/tools
+python tracking_demo.py \
+  --cfg_file cfgs/kitti_models/centerpoint_aug.yaml \
+  --ckpt checkpoints/checkpoint_epoch_80.pth \
+  --data_path ../../datasets/run_01_accumulated/velodyne \
+  --frame_rate 10 \
+  --mode infer
+```
+
+`--calib`를 지정하면 `rtk_latest.csv`에 LiDAR 좌표계 위치·속도·진행방향도
+기록합니다. 지정하지 않으면 원본 위경도와 velocity만 기록되고 LiDAR
+좌표계 열은 `nan`입니다. `fix_age_sec`, `velocity_age_sec`, `rtk_is_fresh`는
+평가 전에 RTK freshness를 필터링하는 데 사용합니다. RTK 공백이 있어도
+추적용 LiDAR 프레임은 유지하며 가장 최신 값을 붙입니다. 오래된 RTK가 붙은
+프레임 자체를 제외하려면 `--drop-stale-rtk`를 명시합니다.
+
+`rtk_latest.csv`에는 position/velocity covariance 대각 성분도 함께 기록됩니다.
+현재 RTK 결과는 안테나의 점 궤적이며 완전한 3D bounding-box GT는 아닙니다.
+정식 tracking metric을 계산하기 전에는 RTK 안테나에서 객체 중심까지의 offset,
+평가 대상 class와 box 크기를 별도로 정의해야 합니다.
 
 #### RTK–Livox GT 시각 검수
 
@@ -271,6 +332,7 @@ ros2 bag play bags/run_01_livox_rtk --loop
 | `rtk_livox_dataset_tools lidar_pose_calibrator` | RTK bag 기반 LiDAR–RTK pose 캘리브레이션 |
 | `rtk_livox_dataset_tools gt_transformer` | RTK NavPVT를 LiDAR 좌표계 GT CSV로 변환 |
 | `rtk_livox_dataset_tools opencl_dataset_exporter` | Livox bag과 RTK GT CSV를 binary dataset으로 변환 |
+| `rtk_livox_dataset_tools accumulated_bag_exporter` | 결합 bag을 누적 OpenPCDet 프레임과 최신 RTK GT로 변환 |
 | `rtk_livox_dataset_tools opencl_dataset_visualizer` | 변환된 dataset의 point cloud와 RTK GT 시각화 |
 | `rtk_livox_dataset_tools rtk_livox_visualizer` | 실시간 RTK 위치·속도를 LiDAR frame 토픽으로 변환 |
 

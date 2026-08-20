@@ -28,6 +28,7 @@ setup(
             "online_lidar_pose_calibrator = rtk_livox_dataset_tools.online_lidar_pose_calibrator:main",
             "gt_transformer = rtk_livox_dataset_tools.gt_transformer:main",
             "opencl_dataset_exporter = rtk_livox_dataset_tools.opencl_dataset_exporter:main",
+            "accumulated_bag_exporter = rtk_livox_dataset_tools.accumulated_bag_exporter:main",
             "opencl_dataset_visualizer = rtk_livox_dataset_tools.opencl_dataset_visualizer:main",
             "rtk_livox_visualizer = rtk_livox_dataset_tools.rtk_livox_visualizer:main",
         ],

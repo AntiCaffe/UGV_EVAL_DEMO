@@ -24,6 +24,7 @@ colcon build --symlink-install
 source /project/install/setup.bash
 exec "$@"'
 
+
 exec docker run --rm -it \
   --name "${CONTAINER_NAME}" \
   --gpus all \
