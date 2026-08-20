@@ -196,7 +196,9 @@ ros2 launch pcdet_ros2 kitti_bin_publisher.launch.py \
 
 #### 후처리 실행 도구
 
-다음 도구는 launch에 자동으로 포함되지 않으며 필요할 때 `ros2 run`으로 직접 실행합니다.
+`accumulated_bag_exporter`는 전용 launch 파일을 제공하므로 일반적인 데이터셋
+추출은 `ros2 launch`로 실행합니다. launch를 거치지 않고 CLI 옵션을 직접
+지정해야 할 때는 동일한 실행 파일을 `ros2 run`으로 호출할 수 있습니다.
 
 | 실행 파일 | 입력 | 결과 |
 | --- | --- | --- |
