@@ -4,8 +4,10 @@
 import argparse
 import csv
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
+import tempfile
 
 import numpy as np
 
@@ -346,6 +348,253 @@ def write_match_csv(output_path, matches):
             )
 
 
+def _load_pyplot():
+    """Load a non-interactive Matplotlib backend for Docker/SSH."""
+    cache_dir = Path(tempfile.gettempdir()) / "ugv_eval_matplotlib"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    os.environ.setdefault("MPLCONFIGDIR", str(cache_dir))
+
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    return plt
+
+
+def _save_figure(plt, figure, output_path, dpi):
+    figure.tight_layout()
+    figure.savefig(output_path, dpi=dpi, bbox_inches="tight")
+    plt.close(figure)
+
+
+def _match_arrays(matches):
+    return (
+        np.vstack([track.position for _, track, _ in matches]),
+        np.vstack([rtk.position for _, _, rtk in matches]),
+        np.vstack([track.velocity for _, track, _ in matches]),
+        np.vstack([rtk.velocity for _, _, rtk in matches]),
+    )
+
+
+def _plot_trajectory(
+    plt, output_path, predicted_positions, ground_truth_positions, dpi
+):
+    figure, axis = plt.subplots(figsize=(8, 7))
+    axis.plot(
+        ground_truth_positions[:, 0],
+        ground_truth_positions[:, 1],
+        "-o",
+        markersize=3,
+        linewidth=1.5,
+        label="RTK GT",
+    )
+    axis.plot(
+        predicted_positions[:, 0],
+        predicted_positions[:, 1],
+        "-o",
+        markersize=3,
+        linewidth=1.5,
+        label="Tracking",
+    )
+    axis.scatter(
+        ground_truth_positions[0, 0],
+        ground_truth_positions[0, 1],
+        marker="s",
+        s=55,
+        label="Start",
+        zorder=3,
+    )
+    axis.set_title("XY Trajectory: Tracking vs RTK GT")
+    axis.set_xlabel("X [m]")
+    axis.set_ylabel("Y [m]")
+    axis.set_aspect("equal", adjustable="datalim")
+    axis.grid(True, alpha=0.3)
+    axis.legend()
+    _save_figure(plt, figure, output_path, dpi)
+
+
+def _plot_vector_errors(
+    plt,
+    output_path,
+    predicted,
+    ground_truth,
+    title,
+    unit,
+    dpi,
+):
+    errors = predicted - ground_truth
+    error_2d = np.linalg.norm(errors[:, :2], axis=1)
+    error_3d = np.linalg.norm(errors, axis=1)
+    frame_index = np.arange(len(errors))
+
+    figure, axes = plt.subplots(2, 1, figsize=(11, 7), sharex=True)
+    for axis_index, axis_name in enumerate(("X", "Y", "Z")):
+        axes[0].plot(
+            frame_index,
+            errors[:, axis_index],
+            linewidth=1.2,
+            label=axis_name,
+        )
+    axes[0].axhline(0.0, color="black", linewidth=0.8, alpha=0.6)
+    axes[0].set_ylabel("Signed error [%s]" % unit)
+    axes[0].grid(True, alpha=0.3)
+    axes[0].legend(ncol=3)
+
+    axes[1].plot(frame_index, error_2d, linewidth=1.4, label="2D")
+    axes[1].plot(frame_index, error_3d, linewidth=1.4, label="3D")
+    axes[1].set_xlabel("Matched frame index")
+    axes[1].set_ylabel("Error magnitude [%s]" % unit)
+    axes[1].grid(True, alpha=0.3)
+    axes[1].legend()
+    figure.suptitle(title)
+    _save_figure(plt, figure, output_path, dpi)
+
+
+def _plot_speed(
+    plt, output_path, predicted_velocities, ground_truth_velocities, dpi
+):
+    predicted_speed = np.linalg.norm(predicted_velocities, axis=1)
+    ground_truth_speed = np.linalg.norm(ground_truth_velocities, axis=1)
+    speed_error = predicted_speed - ground_truth_speed
+    frame_index = np.arange(len(predicted_speed))
+
+    figure, axes = plt.subplots(2, 1, figsize=(11, 7), sharex=True)
+    axes[0].plot(frame_index, ground_truth_speed, label="RTK GT")
+    axes[0].plot(frame_index, predicted_speed, label="Tracking")
+    axes[0].set_ylabel("Speed [m/s]")
+    axes[0].grid(True, alpha=0.3)
+    axes[0].legend()
+
+    axes[1].plot(frame_index, speed_error, color="tab:red")
+    axes[1].axhline(0.0, color="black", linewidth=0.8, alpha=0.6)
+    axes[1].set_xlabel("Matched frame index")
+    axes[1].set_ylabel("Signed error [m/s]")
+    axes[1].grid(True, alpha=0.3)
+    figure.suptitle("Speed: Tracking vs RTK GT")
+    _save_figure(plt, figure, output_path, dpi)
+
+
+def _metric_values(metrics, names, unit_suffix):
+    rmse = [metrics[name]["rmse_" + unit_suffix] for name in names]
+    mae = [metrics[name]["mae_" + unit_suffix] for name in names]
+    return np.asarray(rmse), np.asarray(mae)
+
+
+def _plot_metric_summary(plt, output_path, metrics, coverage, dpi):
+    figure, axes = plt.subplots(1, 2, figsize=(12, 5))
+    width = 0.36
+
+    position_names = ("position_2d", "position_3d")
+    position_rmse, position_mae = _metric_values(
+        metrics, position_names, "m"
+    )
+    position_x = np.arange(len(position_names))
+    axes[0].bar(position_x - width / 2, position_rmse, width, label="RMSE")
+    axes[0].bar(position_x + width / 2, position_mae, width, label="MAE")
+    axes[0].set_xticks(position_x, ("Position 2D", "Position 3D"))
+    axes[0].set_ylabel("Error [m]")
+    axes[0].set_title("Position Metrics")
+    axes[0].grid(True, axis="y", alpha=0.3)
+    axes[0].legend()
+
+    velocity_names = ("velocity_2d", "velocity_3d", "speed")
+    velocity_rmse, velocity_mae = _metric_values(
+        metrics, velocity_names, "m_s"
+    )
+    velocity_x = np.arange(len(velocity_names))
+    axes[1].bar(velocity_x - width / 2, velocity_rmse, width, label="RMSE")
+    axes[1].bar(velocity_x + width / 2, velocity_mae, width, label="MAE")
+    axes[1].set_xticks(
+        velocity_x, ("Velocity 2D", "Velocity 3D", "Speed")
+    )
+    axes[1].set_ylabel("Error [m/s]")
+    axes[1].set_title("Velocity and Speed Metrics")
+    axes[1].grid(True, axis="y", alpha=0.3)
+    axes[1].legend()
+
+    figure.suptitle("Evaluation Summary (Coverage: %.2f%%)" % (coverage * 100))
+    _save_figure(plt, figure, output_path, dpi)
+
+
+def save_evaluation_plots(matches, metrics, coverage, output_dir, dpi=150):
+    """Save trajectory, per-frame errors and summary metrics as PNG files."""
+    if not matches:
+        raise ValueError("matches must contain at least one frame")
+    if dpi <= 0:
+        raise ValueError("dpi must be greater than zero")
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    plt = _load_pyplot()
+    (
+        predicted_positions,
+        ground_truth_positions,
+        predicted_velocities,
+        ground_truth_velocities,
+    ) = _match_arrays(matches)
+    output_paths = {
+        "trajectory_xy_png": output_dir / "trajectory_xy.png",
+        "position_errors_png": output_dir / "position_errors.png",
+        "velocity_errors_png": output_dir / "velocity_errors.png",
+        "speed_comparison_png": output_dir / "speed_comparison.png",
+        "metrics_summary_png": output_dir / "metrics_summary.png",
+    }
+
+    _plot_trajectory(
+        plt,
+        output_paths["trajectory_xy_png"],
+        predicted_positions,
+        ground_truth_positions,
+        dpi,
+    )
+    _plot_vector_errors(
+        plt,
+        output_paths["position_errors_png"],
+        predicted_positions,
+        ground_truth_positions,
+        "Position Error by Matched Frame",
+        "m",
+        dpi,
+    )
+    _plot_vector_errors(
+        plt,
+        output_paths["velocity_errors_png"],
+        predicted_velocities,
+        ground_truth_velocities,
+        "Velocity Error by Matched Frame",
+        "m/s",
+        dpi,
+    )
+    _plot_speed(
+        plt,
+        output_paths["speed_comparison_png"],
+        predicted_velocities,
+        ground_truth_velocities,
+        dpi,
+    )
+    _plot_metric_summary(
+        plt,
+        output_paths["metrics_summary_png"],
+        metrics,
+        coverage,
+        dpi,
+    )
+    return {name: str(path.resolve()) for name, path in output_paths.items()}
+
+
+def parse_boolean(value):
+    """Parse common CLI boolean aliases."""
+    normalized = str(value).strip().lower()
+    if normalized in {"true", "t", "yes", "y", "1", "on"}:
+        return True
+    if normalized in {"false", "f", "no", "n", "0", "off"}:
+        return False
+    raise argparse.ArgumentTypeError(
+        "expected one of: true/false, yes/no, 1/0, on/off"
+    )
+
+
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description=(
@@ -356,6 +605,20 @@ def parse_args(argv=None):
     parser.add_argument("--tracking-dir", required=True)
     parser.add_argument("--rtk-csv", required=True)
     parser.add_argument("--output-dir", default="evaluation_results")
+    parser.add_argument(
+        "-v",
+        "--visualization",
+        type=parse_boolean,
+        default=True,
+        metavar="{true,false}",
+        help="Save evaluation PNG files (boolean aliases are accepted)",
+    )
+    parser.add_argument(
+        "--plot-dpi",
+        type=int,
+        default=150,
+        help="Resolution of saved PNG plots",
+    )
     parser.add_argument(
         "--track-id",
         type=int,
@@ -398,6 +661,8 @@ def parse_args(argv=None):
         parser.error("--min-score must be non-negative")
     if args.association_gate_m <= 0.0:
         parser.error("--association-gate-m must be greater than zero")
+    if args.plot_dpi <= 0:
+        parser.error("--plot-dpi must be greater than zero")
     return args
 
 
@@ -451,6 +716,15 @@ def evaluate(args):
     write_match_csv(match_csv, matches)
 
     coverage = len(matches) / len(rtk_by_frame)
+    plot_outputs = {}
+    if args.visualization:
+        plot_outputs = save_evaluation_plots(
+            matches=matches,
+            metrics=metrics,
+            coverage=coverage,
+            output_dir=output_dir,
+            dpi=args.plot_dpi,
+        )
     summary = {
         "inputs": {
             "tracking_dir": str(Path(args.tracking_dir).resolve()),
@@ -483,10 +757,15 @@ def evaluate(args):
             "coverage": coverage,
         },
         "antenna_offset_lidar": list(args.antenna_offset_lidar),
+        "visualization": {
+            "enabled": args.visualization,
+            "dpi": args.plot_dpi,
+        },
         "metrics": metrics,
         "outputs": {
             "frame_errors_csv": str(match_csv.resolve()),
             "summary_json": str(summary_json.resolve()),
+            **plot_outputs,
         },
         "notes": [
             "RMSE/MAE use only frames where the selected track and valid RTK overlap.",
@@ -530,6 +809,12 @@ def main(argv=None):
     print(_metric_line("Speed", metrics["speed"], "m_s"))
     print("Summary: %s" % summary["outputs"]["summary_json"])
     print("Per-frame errors: %s" % summary["outputs"]["frame_errors_csv"])
+    plot_count = sum(key.endswith("_png") for key in summary["outputs"])
+    if plot_count:
+        print(
+            "Plots: %d PNG files in %s"
+            % (plot_count, str(Path(args.output_dir).resolve()))
+        )
 
 
 if __name__ == "__main__":

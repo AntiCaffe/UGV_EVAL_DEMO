@@ -119,8 +119,24 @@ def test_evaluate_auto_selects_consistent_nearest_track(tmp_path):
     assert summary["metrics"]["velocity_3d"]["mae_m_s"] == pytest.approx(1.0)
     assert summary["metrics"]["speed"]["rmse_m_s"] == pytest.approx(1.0)
     assert (output_dir / "frame_errors.csv").is_file()
+    expected_plots = {
+        "trajectory_xy.png",
+        "position_errors.png",
+        "velocity_errors.png",
+        "speed_comparison.png",
+        "metrics_summary.png",
+    }
+    assert all(
+        (output_dir / filename).stat().st_size > 0
+        for filename in expected_plots
+    )
     saved = json.loads((output_dir / "summary.json").read_text())
     assert saved["selection"]["track_id"] == 7
+    assert {
+        Path(path).name
+        for name, path in saved["outputs"].items()
+        if name.endswith("_png")
+    } == expected_plots
 
 
 def test_stale_rtk_is_excluded_by_default(tmp_path):
@@ -145,3 +161,16 @@ def test_explicit_mae_functions():
 
     assert calculate_vector_mae(predicted, ground_truth) == pytest.approx(1.5)
     assert calculate_scalar_mae([2.0, 4.0], [1.0, 2.0]) == pytest.approx(1.5)
+
+
+@pytest.mark.parametrize(
+    ("alias", "expected"),
+    [("true", True), ("on", True), ("1", True), ("false", False),
+     ("off", False), ("0", False)],
+)
+def test_visualization_boolean_alias(alias, expected):
+    args = evaluate_module.parse_args(
+        ["--tracking-dir", "tracking", "--rtk-csv", "rtk.csv", "-v", alias]
+    )
+
+    assert args.visualization is expected

@@ -337,7 +337,8 @@ cd /project/OpenPCDet/tools
 python evaluate.py \
   --tracking-dir ../../tracking_results/run_02 \
   --rtk-csv ../../datasets/run_02_accumulated/rtk_latest.csv \
-  --output-dir ../../evaluation_results/run_02
+  --output-dir ../../evaluation_results/run_02 \
+  --visualization true
 ```
 
 | 평가값 | 정의 |
@@ -364,12 +365,20 @@ python evaluate.py \
 존재하는 frame에서 계산되므로 RMSE/MAE와 함께 coverage 및 누락 frame 수를
 확인해야 합니다.
 
-평가 결과는 다음 두 파일로 저장됩니다.
+`-v true` 또는 `--visualization true`이면 평가 결과와 시각화 이미지가 같은
+디렉터리에 저장됩니다. `false`, `no`, `0`, `off`를 지정하면 이미지 생성을
+건너뜁니다. PNG 생성에는 Matplotlib을 사용하며 Docker나 SSH처럼 화면이 없는
+환경에서도 바로 저장됩니다.
 
 ```text
 evaluation_results/run_02/
-├── summary.json      # 선택 track, coverage, RMSE/MAE 요약
-└── frame_errors.csv  # frame별 예측·GT와 위치·속도 오차
+├── summary.json          # 선택 track, coverage, RMSE/MAE 요약
+├── frame_errors.csv      # frame별 예측·GT와 위치·속도 오차
+├── trajectory_xy.png     # Tracking과 RTK GT의 XY 궤적
+├── position_errors.png   # frame별 XYZ 및 2D/3D 위치 오차
+├── velocity_errors.png   # frame별 XYZ 및 2D/3D 속도 오차
+├── speed_comparison.png  # Tracking/RTK 속력과 signed error
+└── metrics_summary.png   # RMSE/MAE와 coverage 요약
 ```
 
 <details>
@@ -380,6 +389,8 @@ evaluation_results/run_02/
 | `--tracking-dir` | 필수 | frame별 tracking TXT 디렉터리 |
 | `--rtk-csv` | 필수 | exporter가 생성한 `rtk_latest.csv` |
 | `--output-dir` | `evaluation_results` | 평가 결과 디렉터리 |
+| `-v`, `--visualization` | `true` | PNG 생성 여부: `true/false`, `yes/no`, `1/0`, `on/off` |
+| `--plot-dpi` | `150` | 저장할 PNG 해상도(DPI) |
 | `--track-id` | 자동 선택 | 평가할 고정 track ID |
 | `--class-id` | 전체 class | association과 평가에 사용할 class ID |
 | `--min-score` | `0.0` | 평가에 포함할 최소 tracking score |
